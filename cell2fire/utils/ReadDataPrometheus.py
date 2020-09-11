@@ -286,7 +286,7 @@ Returns         dict{int:int}
 Inputs:
 filename        str
 '''    
-# Reads IgnitionPoints.csv file and creates an array with them
+# Reads Ignitions.csv file and creates an array with them
 """
 def IgnitionPoints(filename):
     #Ignitions is a dictionary with years = keys and ncell = values

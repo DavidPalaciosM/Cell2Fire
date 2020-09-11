@@ -89,7 +89,7 @@ def make_parser():
                         default=False,
                         action="store_true")
     parser.add_argument("--HarvestedCells",
-                        help="File with initial harvested cells (csv with year, number of cells: e.g 1,1,2,3,4,10)",
+                        help="File with harvested cells (csv with year, cell numbers: e.g 1,1,2,3,4,10)",
                         dest="HCells",
                         type=str,
                         default=None)
@@ -98,11 +98,14 @@ def make_parser():
                         dest="msgHeur",
                         type=str,
                         default="")
+    """
+    Use HarvestedCells instead
     parser.add_argument("--applyPlan",
                         help="Path to Heuristic/Harvesting plan",
                         dest="planPath",
                         type=str,
                         default="")
+    """
     parser.add_argument("--DFraction",
                         help="Demand fraction w.r.t. total forest available",
                         dest="TFraction",

@@ -21,23 +21,23 @@ A harvested cells file has comma separated values (it is a .csv file).
 IOt should contain the year number and the cell numbers as inputs;
 e.g. 1, 1, 2, 3, 5, 8 indicates that before year 1, cells 1,2,3,5, and
 8 are already harvested. Once we have created the CSV file we could
-save it as harvestedCells.csv in the following path
+save it as myharvestedCells.csv in the following path
 ../data/Harvest40x40.
 
 **Note: The 1st row of the .csv file is not parsed by cell2fire, therefore we could provide "Year number" and "Cell Numbers" in the 1st row. In the second row we can provide our inputs.**
 
-Now to simulate the program we would need to provide the inputs required by each function. For --HarvestedCells we would have to provide the location of the harvestedCells.csv file as an input. 
+Now to simulate the program we would need to provide the inputs required by each function. For --HarvestedCells we would have to provide the location of a csv file as an input. 
 
 
 Illustrations 1: 
 ----------------
-For our 1st illustration we save our harvestedCells.csv file with just three harvested cells. We have take the year number and cell numbers as 1,936,976,1056. Once we save the harvestedCells.csv file with the following command:
+For our 1st illustration we save our myharvestedCells.csv file with just three harvested cells. We have take the year number and cell numbers as 1,936,976,1056. Once we save the myharvestedCells.csv file with the following command:
 
 Input Command:
 
 ::
    
-    python main.py --input-instance-folder ../data/Harvest40x40/ --output-folder ../Harvest40x40 --ignitions --sim-years 1 --nsims 5 --grids --finalGrid --weather rows --nweathers 1 --Fire-Period-Length 1.0 --output-messages --ROS-CV 0.8 --seed 123 --stats --allPlots --IgnitionRad 1 --grids --combine --heuristic 1 --GASelection --HarvestedCells ../data/Harvest40x40/harvestedCells.csv
+    python main.py --input-instance-folder ../data/Harvest40x40/ --output-folder ../Harvest40x40 --ignitions --sim-years 1 --nsims 1 --grids --finalGrid --weather rows --nweathers 1 --Fire-Period-Length 1.0 --output-messages --ROS-CV 0.8 --seed 123 --stats --allPlots --IgnitionRad 1 --grids --combine --heuristic 1 --GASelection --HarvestedCells ../data/Harvest40x40/myharvestedCells.csv
 	
 Output:
 
@@ -52,8 +52,11 @@ We can see as the harvested cells are very few, we can not fully stop the propog
 
 Illustrations 2: 
 ----------------
-   
-    python main.py --input-instance-folder ../data/Harvest40x40/ --output-folder ../Harvest40x40 --ignitions --sim-years 1 --nsims 5 --grids --finalGrid --weather rows --nweathers 1 --Fire-Period-Length 1.0 --output-messages --ROS-CV 0.8 --seed 123 --stats --allPlots --IgnitionRad 1 --grids --combine --heuristic 1 --GASelection --HarvestedCells ../data/Harvest40x40/harvestedCells.csv
+
+The file ``band_1.csv`` in ``Harvest40x40`` shows a band of cells
+harvested befor the first year. The following command uses that file.
+
+    python main.py --input-instance-folder ../data/Harvest40x40/ --output-folder ../Harvest40x40 --ignitions --sim-years 1 --nsims 1 --grids --finalGrid --weather rows --nweathers 1 --Fire-Period-Length 1.0 --output-messages --ROS-CV 0.8 --seed 123 --stats --allPlots --IgnitionRad 1 --grids --combine --heuristic 1 --GASelection --HarvestedCells ../data/Harvest40x40/band1.csv
 	
 
 Output:
@@ -69,14 +72,14 @@ As we have harvested enough cells the fire does not propogate. We have strategic
 
 Illustrations 3: 
 ----------------
-For our 3rd illustration we save our harvestedCells.csv file with multiple harvested cell (1,42,83,124..,16000). We have harvested the forest diagonally to see how the fire propogates. We have take the year number and cell number as 1,1,42,83,124..,1600. Once we save the harvestedCells.csv file with the following inputs we can parse them using our program. The command for our program with their respective inputs is as shown below.
+For our 3rd illustration we save our myharvestedCells.csv file with multiple harvested cell (1,42,83,124..,16000). We have harvested the forest diagonally to see how the fire propogates. We have take the year number and cell number as 1,1,42,83,124..,1600. Once we save the harvestedCells.csv file with the following inputs we can parse them using our program. The command for our program with their respective inputs is as shown below.
 
 Input Command:
 
 .. code-block:: html
    :linenos:
    
-    python main.py --input-instance-folder ../data/Harvest40x40/ --output-folder ../Harvest40x40 --ignitions --sim-years 1 --nsims 5 --grids --finalGrid --weather rows --nweathers 1 --Fire-Period-Length 1.0 --output-messages --ROS-CV 0.8 --seed 123 --stats --allPlots --IgnitionRad 1 --grids --combine --heuristic 1 --GASelection --HarvestedCells ../data/Harvest40x40/harvestedCells.csv
+    python main.py --input-instance-folder ../data/Harvest40x40/ --output-folder ../Harvest40x40 --ignitions --sim-years 1 --nsims 1 --grids --finalGrid --weather rows --nweathers 1 --Fire-Period-Length 1.0 --output-messages --ROS-CV 0.8 --seed 123 --stats --allPlots --IgnitionRad 1 --grids --combine --heuristic 1 --GASelection --HarvestedCells ../data/Harvest40x40/myharvestedCells.csv
 
 Output:
 
