@@ -88,6 +88,26 @@ class Statistics(object):
             if self._verbose:
                 print("creating", self._StatsFolder)
             os.makedirs(self._StatsFolder)
+            
+    ## local utility ##
+    def _GridDir(self, SimNum):
+        """ Factored code to deal with grid files from the C++ side.
+        Args:
+            SimNum (int): simulation number (zero based)
+        
+        Returns:
+            GridPath (str), GridFiles (list of str): C++ output files
+               with GridFiles sorted by the trailing number in the base filename (e.g. hour)
+        """
+        def fnum(fname):
+            parts = fname.split(".")
+            assert(parts[1] == "csv")
+            return int(re.compile(r'(\d+)$').search(parts[0]).group(1))
+        
+        GridPath = os.path.join(self._OutFolder, "Grids", "Grids"+str(SimNum+1))
+        GridFiles = os.listdir(GridPath)
+        GridFiles.sort(key=fnum)
+        return GridPath, GridFiles
 
             
     ####################################
@@ -797,9 +817,7 @@ class Statistics(object):
         
         # Stats per simulation
         for i in tqdm(range(self._nSims)):
-            GridPath = os.path.join(self._OutFolder, "Grids", "Grids"+str(i + 1))
-            GridFiles = os.listdir(GridPath)
-            #print("GridFiles:", GridFiles, "\nSim:", i+1)
+            GridPath, GridFiles = self._GridDir(i)
             
             # Reset container
             a = 0         
@@ -991,8 +1009,8 @@ class Statistics(object):
 
         # Stats per simulation
         for i in range(self._nSims):
-            GridPath = os.path.join(self._OutFolder, "Grids", "Grids"+str(i + 1))
-            GridFiles = os.listdir(GridPath)
+            GridPath, GridFiles = self._GridDir(i)
+            
             #print(GridPath, GridFiles)
             if len(GridFiles) > 0: 
                 a = pd.read_csv(GridPath +"/"+ GridFiles[-1], delimiter=',', header=None).values
@@ -1089,14 +1107,12 @@ class Statistics(object):
         if self._tCorrected:
             maxStep = 0
             for i in range(self._nSims):
-                GridPath = os.path.join(self._OutFolder, "Grids", "Grids"+str(i+1))
-                GridFiles = os.listdir(GridPath)
+                GridPath, GridFiles = self._GridDir(i)
                 if len(GridFiles) > maxStep:
                     maxStep = len(GridFiles)
                         
             for i in range(self._nSims):
-                GridPath = os.path.join(self._OutFolder, "Grids", "Grids"+str(i+1))
-                GridFiles = os.listdir(GridPath)
+                GridPath, GridFiles = self._GridDir(i)
                 if len(GridFiles) < maxStep:
                     for j in range(len(GridFiles), maxStep):
                         file = 'ForestGrid{:02d}.csv'.format(j)
@@ -1110,8 +1126,7 @@ class Statistics(object):
         statDicth = {}
         statDFh = pd.DataFrame(columns=[["ID", "NonBurned", "Burned", "Harvested"]])
         for i in range(self._nSims):
-            GridPath = os.path.join(self._OutFolder, "Grids", "Grids"+str(i+1))
-            GridFiles = os.listdir(GridPath)
+            GridPath, GridFiles = self._GridDir(i)
             if len(GridFiles) > 0:
                 for j in range(len(GridFiles)):
                     ah = pd.read_csv(GridPath +"/"+ GridFiles[j], delimiter=',', header=None).values

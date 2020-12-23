@@ -3,3 +3,4 @@
 *.gch
 src/Cell2Fire/Cell2FireC/Makefile
 
+cell2fire/Cell2FireC/Cell2Fire
