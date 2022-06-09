@@ -15,6 +15,7 @@ import cell2fire.utils.ReadDataPrometheus as ReadDataPrometheus
 from cell2fire.utils.ParseInputs import InitCells
 from cell2fire.utils.Stats import *
 from cell2fire.utils.Heuristics import *
+from cell2fire.utils.GeotiffsGenerator import InputGeotiff,OutputGeotiff
 import cell2fire  # for path finding
 p = str(cell2fire.__path__)
 l = p.find("'")
@@ -75,7 +76,11 @@ class Cell2FireC:
                    '--HarvestPlan', self.args.HCells if(self.args.HCells is not None) else '',
 				   '--verbose' if (self.args.verbose) else '',]
         
-        # Output log
+	#Geotiff Input Generator
+        if self.args.Geotiffs:
+            InputGeotiff(self.args.InFolder)
+        
+	# Output log
         if self.args.OutFolder is not None:
             if os.path.isdir(self.args.OutFolder) is False:
                 os.makedirs(self.args.OutFolder)
@@ -94,6 +99,9 @@ class Cell2FireC:
         # End of the replications
         print("End of Cell2FireC execution...")
         
+	#Geotiff Output Generator
+	if self.args.Geotiffs:
+            OutputGeotiff(self.args.InFolder,self.args.OutFolder,self.args.nsims)
     
     # Run C++ Sim with heuristic treatment 
     def run_Heur(self, OutFolder, HarvestPlanFile):
@@ -117,7 +125,10 @@ class Cell2FireC:
                    '--bbo' if (self.args.BBO) else '',
                    '--HarvestPlan', HarvestPlanFile if(HarvestPlanFile is not None) else '',
 				   '--verbose' if (self.args.verbose) else '']
-        
+        #Geotiff Input Generator
+        if self.args.Geotiffs:
+            InputGeotiff(self.args.InFolder)
+	
         # Output log
         if OutFolder is not None:
             if os.path.isdir(OutFolder) is False:
@@ -138,6 +149,9 @@ class Cell2FireC:
         else:
             print("End of Cell2FireC execution...")
     
+	#Geotiff Output Generator
+	if self.args.Geotiffs:
+            OutputGeotiff(self.args.InFolder,self.args.OutFolder,self.args.nsims)
     # Pre-processing
     '''
     Generate the Data.csv file for the C++ core
