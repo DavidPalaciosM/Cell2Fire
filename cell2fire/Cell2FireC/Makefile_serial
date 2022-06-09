@@ -10,22 +10,22 @@ TARGETS = Cell2Fire
 
 all:	$(TARGETS)
 
-Cell2Fire: Cell2Fire.o CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
-	$(CC) -o $@ $(LIBS) Cell2Fire.o CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
+Cell2Fire: Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
+	$(CC) -o $@ $(LIBS) Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
 
-Cell2Fire.o: Cell2Fire.cpp CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o WriteCSV.o
+Cell2Fire.o: Cell2Fire.cpp CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o WriteCSV.o
 	$(CC) -c $(CFLAGS) Cell2Fire.cpp
 
 SpottingFBP.o: SpottingFBP.cpp SpottingFBP.h CellsFBP.h
 	$(CC) -c $(CFLAGS) SpottingFBP.cpp CellsFBP.h
 
-CellsFBP.o: CellsFBP.cpp CellsFBP.h FBPfunc5_NoDebug.o
+CellsFBP.o: CellsFBP.cpp CellsFBP.h FuelModel.o
 	$(CC) -c $(CFLAGS) CellsFBP.cpp
 
-FBPfunc5_NoDebug.o: FBPfunc5_NoDebug.c FBP5.0.h
-	$(CC) -c $(CFLAGS) FBPfunc5_NoDebug.c
+FuelModel.o: FuelModel.c FuelModel.h
+	$(CC) -c $(CFLAGS) FuelModel.c
 
-ReadCSV.o: ReadCSV.cpp ReadCSV.h FBPfunc5_NoDebug.o
+ReadCSV.o: ReadCSV.cpp ReadCSV.h FuelModel.o
 	$(CC) -c $(CFLAGS) ReadCSV.cpp
 
 ReadArgs.o: ReadArgs.cpp ReadArgs.h
@@ -45,4 +45,4 @@ Ellipse.o: Ellipse.cpp Ellipse.h
 
 
 clean:
-	rm Lightning.o ReadArgs.o ReadCSV.o FBPfunc5_NoDebug.o Cell2Fire.o CellsFBP.o Cell2Fire SpottingFBP.o Forest.o WriteCSV.o Ellipse.o *.gch
+	rm Lightning.o ReadArgs.o ReadCSV.o FuelModel.o Cell2Fire.o CellsFBP.o Cell2Fire SpottingFBP.o Forest.o WriteCSV.o Ellipse.o *.gch
