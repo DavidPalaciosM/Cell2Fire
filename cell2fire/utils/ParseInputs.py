@@ -234,6 +234,11 @@ def make_parser():
                         dest="stats",
                         default=False,
                         action="store_true")
+    parser.add_argument("--geotiffs",
+                        help="Generate .tif files for georeferencing inputs and outputs",
+                        dest="Geotiffs",
+                        default=False,
+                        action="store_true")
     parser.add_argument("--correctedStats",
                         help="Normalize the number of grids outputs for hourly stats",
                         dest="tCorrected",

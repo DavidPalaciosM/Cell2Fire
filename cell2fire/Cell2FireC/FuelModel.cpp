@@ -76,7 +76,7 @@ Originally  Written at P.N.F.I.  December 91, by Mike Wotton
             - updated header to FBP5.h
 */
 
-#include "FBP5.0.h"
+#include "FuelModel.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
