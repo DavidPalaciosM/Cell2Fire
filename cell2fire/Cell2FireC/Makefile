@@ -16,7 +16,7 @@ OS = Ubuntu
 MODE=Serial
 PARALLEL_DIR = parallel_code/Cell2FireParallel/Cell2FireC_Parallel
 
-Cell2Fire: Cell2Fire.o CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
+Cell2Fire: Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
 
 # This will cause 'Extraneous text after `ifneq' directive'
 ifneq ($(OS), Ubuntu) && ($(OS), OSX))
@@ -28,16 +28,16 @@ $(info MODE must be either Serial or Parallel)
 endif
 
 ifeq ($(MODE), Serial)
-		$(CC) -o $@ $(LIBS) Cell2Fire.o CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
+		$(CC) -o $@ $(LIBS) Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
 else
 ifeq ($(OS), Ubuntu)
-	$(CC) -o $@ $(LIBS) -fopenmp Cell2Fire.o CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
+	$(CC) -o $@ $(LIBS) -fopenmp Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
 else
-	$(CC) -o $@ $(LIBS) -Xclang -fopenmp -lomp Cell2Fire.o CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
+	$(CC) -o $@ $(LIBS) -Xclang -fopenmp -lomp Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
 endif
 endif
 
-Cell2Fire.o: Cell2Fire.cpp CellsFBP.o FBPfunc5_NoDebug.o SpottingFBP.o ReadCSV.o ReadArgs.o WriteCSV.o
+Cell2Fire.o: Cell2Fire.cpp CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o WriteCSV.o
 ifeq ($(MODE), Serial)
 	$(CC) -c $(CFLAGS) Cell2Fire.cpp
 else
@@ -51,13 +51,13 @@ endif
 SpottingFBP.o: SpottingFBP.cpp SpottingFBP.h CellsFBP.h
 	$(CC) -c $(CFLAGS) SpottingFBP.cpp CellsFBP.h
 
-CellsFBP.o: CellsFBP.cpp CellsFBP.h FBPfunc5_NoDebug.o
+CellsFBP.o: CellsFBP.cpp CellsFBP.h FuelModel.o
 	$(CC) -c $(CFLAGS) CellsFBP.cpp
 
-FBPfunc5_NoDebug.o: FBPfunc5_NoDebug.c FBP5.0.h
+FuelModel.o: FuelModel.c FuelModel.h
 	$(CC) -c $(CFLAGS) FBPfunc5_NoDebug.c
 
-ReadCSV.o: ReadCSV.cpp ReadCSV.h FBPfunc5_NoDebug.o
+ReadCSV.o: ReadCSV.cpp ReadCSV.h FuelModel.o
 	$(CC) -c $(CFLAGS) ReadCSV.cpp
 
 READARGS = ReadArgs
@@ -82,4 +82,4 @@ Ellipse.o: Ellipse.cpp Ellipse.h
 
 
 clean:
-	rm Lightning.o ReadArgs.o ReadCSV.o FBPfunc5_NoDebug.o Cell2Fire.o CellsFBP.o Cell2Fire SpottingFBP.o Forest.o WriteCSV.o Ellipse.o *.gch
+	rm Lightning.o ReadArgs.o ReadCSV.o FuelModel.o Cell2Fire.o CellsFBP.o Cell2Fire SpottingFBP.o Forest.o WriteCSV.o Ellipse.o *.gch
