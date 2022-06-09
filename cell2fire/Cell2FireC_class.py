@@ -49,7 +49,7 @@ class Cell2FireC:
         self._FTypeCells = []
         self._FTypes2 = {"m1": 0, "m2": 1, "m3": 2, "m4": 3,
                          "c1": 4, "c2": 5, "c3": 6, "c4": 7, "c5": 8, "c6": 9, "c7": 10,
-                         "d1": 11, "s1": 12, "s2": 13, "s3": 14, "o1a": 15, "o1b": 16, "d2": 17}
+                         "d1": 11, "s1": 12, "s2": 13, "s3": 14, "o1a": 15, "o1b": 16, "d2": 17} #to do: leer desde el diccionario de data fuel
         
     
     # Run C++ Sim 
