@@ -1,816 +1,2354 @@
-/*   Subroutine of  FBP.C   version 4.4   Aug,2007
-         Canadian Forest Fire Behaviour Prediction System
-This code is copyright of the Canadian Forest Service, Natural Resources Canada (1992-2005)
-It is provide free of charge to anyone who wishes to incorporate it within their 
-forest fire management applications, however users should note in their application that
-the FBP calucaltions come from the Canadianf Forest Services Fire Behaviour Prediction
-System. The Canadian Forest Service has gone through considerable testing to ensure that
-these computer functions duplicate the system as laid out in ST-X-3 (The Development
-and Structure of the Canadian Forest Fire Behaviour Prediction System (1992)) and the subsequent corrections and additions to the system (the draft "FBP Note"), however no
-guarentte is given as to the absolute accuracy of the code.
-  This file contains a series of functions that go thru all the
-  FBP System calculations.
-Originally  Written at P.N.F.I.  December 91, by Mike Wotton
- Corrections to version  1.0
-   1.01  -  b value in O1b was wrong.   KA at nofc (mar5,92) ...bmw
-   1.01a  - no error just added upper and lowercase fueltype entry ...bmw
-   1.02   - l_to_b problem with inequalitiy...minor prob fixed
-   1.5  - modifications to stop small(improbable) numbers from blowing
-          up the slope calculation stuff
-          this caused a slope problem which BA @ PFC pointed out
-                may 93.......bmw
-   3.0  jan /96   bmw
-        -  c6  - constant sfc
-      3.01  apr/97
-        - add line to recognize uppercase in grass fuels
-      3.02  apr/97
-        - change accn funtion to recognize lower case fuels for open
-      3.1  jul/97
-        - change slope function to stop overflow when cur<=50 in O1
-      3.2 sept/97
-        - change the c6 calc of flank ros to avoid variation in l/b with
-           RSC calculation in flank.
-      3.3 jan/98
-        - error was SFC >0  if CUR<50 (and hence ROS=0)
-          changed this within the surf_fuel_consump() fn
-      3.4 apr/98  (ya i know the dates aren't in sequence)
-         - change O1a  A value from 1.41 to 1.4  from KA apr/98
-         
-      4.0 jan/98
-         - changes listed within the FBP note and TEST dataset 
-        4.1  - August 2004
-          - final changes in the FBP note (new M-3/M-4 model) and a new grass CF model
-        -removed some verstigaes of older functions for input /output
-        4.2 - Oct 2004
-        - changes as a result of discussion with Prometheus team
-         -  SFC in grass ...4.1 did not include changes to grass consumption though
-            spread at values of CUR<50% are now possible (see point 3.3 above)
-        - at  very short time periods using acceleration a CFB(t) should be caluclated
-            and used for final ROS in the C-6 model. 
-       4.3 - August 2005
-        - changes as a result of further discussions with Prometheus team. These were:
-        - changes to include the alternate ISI calculation formula (53a footnote 2) in 
-                the calculation of WSE  (...added as a section to The FBP Note)
-        - addition of D-2 for the promtheus team to evaluate their model
-          ( D-2 is leafed out pure aspen
-            ROS(D-2)= 0.2 * ROS(D-1) if BUI>80  otherwise ROS(D-2)=0)
-        - NOTE that this (D-2) is not an official part of the FBP System however.
-        4.4  August 2007
-         - crown consump in m3/m4. It was calcuating based full conifer content.
-                but should be modifed by PDF
-         - change to match changes in FBP Note section 3.3 (eqn 66c)
-        4.5 Nov 2007
-          - perimeter calc wasn't based on LB(t).
-          - Flankfire final ROS (FROS) could be set to FRSS if flank fire did not
-             involve crowning 
-          - change to function headers in perimeter() and  flank_spread_distance()
-                to accomodate LB(t) assignment
-          - LB(t) is now added to the secondary inputs structure and kept
-                it is asdsigned in  flank_spread_distance().
-        4.6 jan 2009
-          - uping the slope limit to 70%...and so the default after that is 10.0
-        5.0  Oct 2014
-            - PGR is corrected to be a function of ROS(t) not equilibrium ROS  
-        5.0001  June 2015
-            - forgot to change the encoded version number to 5.0.  now 5.0001
-            - updated header to FBP5.h
+#include "FuelModel.h"
+
+#include <iostream>
+#include <math.h>
+#include <cmath>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <string.h>
+#include <unordered_map>
+#include <string>
+#include <vector>
+
+using namespace std;
+
+/*
+	Global coefficients
+*/  
+std::unordered_map<int, std::vector<float>> p_coeff;
+std::unordered_map<int, std::vector<float>> q_coeff;
+ 
+/*
+	Functions
 */
 
-#include "FuelModel.h"
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+void initialize_coeff(int scenario)
+{
+	if (scenario == 1){
+		// Populate them
+		// FM101
+		int F101 = 101;
+		std::vector<float> p_101;
+		p_101.push_back(2.575);
+		p_101.push_back(0.6665);
+		p_101.push_back(0.1096);
 
-  char version[50]="Last modified June 2015,  by BMW ",
-       ver[17] = "Version 5.0001  ";
+		std::vector<float> q_101;
+		q_101.push_back(-0.516);
+		q_101.push_back(0.288);
+		q_101.push_back(0.8972);
 
-  float slopelimit_isi=0.01, numfuels=18;
+		p_coeff.insert(std::make_pair(F101, p_101));
+		q_coeff.insert(std::make_pair(F101, q_101));
+		
+		
+		// FM 102
+		int F102 = 102;
+		  std::vector<float> p_102;
+		  p_102.push_back(0.4218);
+		  p_102.push_back(0.2915);
+		  p_102.push_back(0.01212);
 
-  void calculate(inputs *data,fuel_coefs *pt,main_outs *at,
-      snd_outs *sec,fire_struc *hptr,fire_struc *fptr,fire_struc *bptr)
-  {
-    char firetype;
-    float accn;
-    fuel_coefs **ptr=&pt;
-    zero_main(at);
-    zero_sec(sec);
-    zero_fire(hptr);
-    zero_fire(fptr);
-    zero_fire(bptr);
-    at->covertype=get_fueltype_number(ptr,data->fueltype);
-    at->ff=ffmc_effect(data->ffmc);
-    at->rss=rate_of_spread(data,(*ptr),at);
-    hptr->rss=at->rss;
-    at->sfc=surf_fuel_consump(data);
-    at->sfi=fire_intensity(at->sfc,at->rss);
+		  std::vector<float> q_102;
+		  q_102.push_back(-1.307);
+		  q_102.push_back(0.1322);
+		  q_102.push_back(1.887);
+
+		  p_coeff.insert(std::make_pair(F102, p_102));
+		  q_coeff.insert(std::make_pair(F102, q_102));
+
+		  // FM 103
+		  int F103 = 103;
+		  std::vector<float> p_103;
+		  p_103.push_back(0.1638);
+		  p_103.push_back(0.2095);
+		  p_103.push_back(0.007809);
+
+		  std::vector<float> q_103;
+		  q_103.push_back(-1.572);
+		  q_103.push_back(0.1068);
+		  q_103.push_back(2.409);
+
+		  p_coeff.insert(std::make_pair(F103, p_103));
+		  q_coeff.insert(std::make_pair(F103, q_103));
 
 
-    if(at->covertype=='c')
-     {
-       at->fmc=foliar_moisture(data,at);
-       at->csi=crit_surf_intensity((*ptr),at->fmc);
-       at->rso=critical_ros(data->fueltype,at->sfc,at->csi);
-       firetype=fire_type(at->csi,at->sfi);
+		  // FM 104
+		  int F104 = 104;
+		  std::vector<float> p_104;
+		  p_104.push_back(0.07138);
+		  p_104.push_back(0.1417);
+		  p_104.push_back(0.002243);
+
+		  std::vector<float> q_104;
+		  q_104.push_back(-2.391);
+		  q_104.push_back(0.05973);
+		  q_104.push_back(3.334);
+
+		  p_coeff.insert(std::make_pair(F104, p_104));
+		  q_coeff.insert(std::make_pair(F104, q_104));
+
+		  // FM 105
+		  int F105 = 105;
+		  std::vector<float> p_105;
+		  p_105.push_back(0.03548);
+		  p_105.push_back(0.07829);
+		  p_105.push_back(0.001524);
+
+		  std::vector<float> q_105;
+		  q_105.push_back(-3.075);
+		  q_105.push_back(0.03373);
+		  q_105.push_back(4.391);
+
+		  p_coeff.insert(std::make_pair(F105, p_105));
+		  q_coeff.insert(std::make_pair(F105, q_105));
+
+		  // FM 106
+		  int F106 = 106;
+		  std::vector<float> p_106;
+		  p_106.push_back(0.02469);
+		  p_106.push_back(0.08049);
+		  p_106.push_back(0.0008245);
+
+		  std::vector<float> q_106;
+		  q_106.push_back(-4.006);
+		  q_106.push_back(0.03019);
+		  q_106.push_back(5.463);
+
+		  p_coeff.insert(std::make_pair(F106, p_106));
+		  q_coeff.insert(std::make_pair(F106, q_106));
+
+		  // FM 107
+		  int F107 = 107;
+		  std::vector<float> p_107;
+		  p_107.push_back(0.02329);
+		  p_107.push_back(0.09086);
+		  p_107.push_back(0.0009262);
+
+		  std::vector<float> q_107;
+		  q_107.push_back(-3.979);
+		  q_107.push_back(0.03746);
+		  q_107.push_back(5.587);
+
+		  p_coeff.insert(std::make_pair(F107, p_107));
+		  q_coeff.insert(std::make_pair(F107, q_107));
+
+		  // FM 108
+		  int F108 = 108;
+		  std::vector<float> p_108;
+		  p_108.push_back(0.02111);
+		  p_108.push_back(0.07793);
+		  p_108.push_back(0.001174);
+
+		  std::vector<float> q_108;
+		  q_108.push_back(-3.842);
+		  q_108.push_back(0.03855);
+		  q_108.push_back(5.817);
+
+		  p_coeff.insert(std::make_pair(F108, p_108));
+		  q_coeff.insert(std::make_pair(F108, q_108));
+
+		  // FM 121
+		  int F121 = 121;
+		  std::vector<float> p_121;
+		  p_121.push_back(0.613);
+		  p_121.push_back(0.2139);
+		  p_121.push_back(0.0187);
+
+		  std::vector<float> q_121;
+		  q_121.push_back(-1.267);
+		  q_121.push_back(0.0922);
+		  q_121.push_back(1.845);
+
+		  p_coeff.insert(std::make_pair(F121, p_121));
+		  q_coeff.insert(std::make_pair(F121, q_121));
+
+		  // FM 122
+		  int F122 = 122;
+		  std::vector<float> p_122;
+		  p_122.push_back(0.195);
+		  p_122.push_back(0.1243);
+		  p_122.push_back(0.006478);
+
+		  std::vector<float> q_122;
+		  q_122.push_back(-1.939);
+		  q_122.push_back(0.05084);
+		  q_122.push_back(2.706);
+
+		  p_coeff.insert(std::make_pair(F122, p_122));
+		  q_coeff.insert(std::make_pair(F122, q_122));
+
+		  // FM 123
+		  int F123 = 123;
+		  std::vector<float> p_123;
+		  p_123.push_back(0.06515);
+		  p_123.push_back(0.07833);
+		  p_123.push_back(0.002831);
+
+		  std::vector<float> q_123;
+		  q_123.push_back(-2.646);
+		  q_123.push_back(0.03365);
+		  q_123.push_back(3.788);
+
+		  p_coeff.insert(std::make_pair(F123, p_123));
+		  q_coeff.insert(std::make_pair(F123, q_123));
+
+		  // FM 124
+		  int F124 = 124;
+		  std::vector<float> p_124;
+		  p_124.push_back(0.07867);
+		  p_124.push_back(0.07788);
+		  p_124.push_back(0.003431);
+
+		  std::vector<float> q_124;
+		  q_124.push_back(-3.508);
+		  q_124.push_back(0.03246);
+		  q_124.push_back(5.098);
+
+		  p_coeff.insert(std::make_pair(F124, p_124));
+		  q_coeff.insert(std::make_pair(F124, q_124));
+
+		  // FM 142
+		  int F142 = 142;
+		  std::vector<float> p_142;
+		  p_142.push_back(0.3505);
+		  p_142.push_back(0.07768);
+		  p_142.push_back(0.01498);
+
+		  std::vector<float> q_142;
+		  q_142.push_back(-1.959);
+		  q_142.push_back(0.0322);
+		  q_142.push_back(2.819);
+
+		  p_coeff.insert(std::make_pair(F142, p_142));
+		  q_coeff.insert(std::make_pair(F142, q_142));
+
+		  // FM 143
+		  int F143 = 143;
+		  std::vector<float> p_143;
+		  p_143.push_back(1.748);
+		  p_143.push_back(0.1589);
+		  p_143.push_back(0.08249);
+
+		  std::vector<float> q_143;
+		  q_143.push_back(-0.938);
+		  q_143.push_back(0.07674);
+		  q_143.push_back(1.479);
+
+		  p_coeff.insert(std::make_pair(F143, p_143));
+		  q_coeff.insert(std::make_pair(F143, q_143));
+
+		  // FM 144
+		  int F144 = 144;
+		  std::vector<float> p_144;
+		  p_144.push_back(0.08116);
+		  p_144.push_back(0.07849);
+		  p_144.push_back(0.003353);
+
+		  std::vector<float> q_144;
+		  q_144.push_back(-2.452);
+		  q_144.push_back(0.03347);
+		  q_144.push_back(3.486);
+
+		  p_coeff.insert(std::make_pair(F144, p_144));
+		  q_coeff.insert(std::make_pair(F144, q_144));
+
+		  // FM 145
+		  int F145 = 145;
+		  std::vector<float> p_145;
+		  p_145.push_back(0.0483);
+		  p_145.push_back(0.0781);
+		  p_145.push_back(0.002783);
+
+		  std::vector<float> q_145;
+		  q_145.push_back(-2.796);
+		  q_145.push_back(0.04029);
+		  q_145.push_back(4.24);
+
+		  p_coeff.insert(std::make_pair(F145, p_145));
+		  q_coeff.insert(std::make_pair(F145, q_145));
+
+		  // FM 146
+		  int F146 = 146;
+		  std::vector<float> p_146;
+		  p_146.push_back(0.1248);
+		  p_146.push_back(0.07783);
+		  p_146.push_back(0.007999);
+
+		  std::vector<float> q_146;
+		  q_146.push_back(-2.121);
+		  q_146.push_back(0.04111);
+		  q_146.push_back(3.327);
+
+		  p_coeff.insert(std::make_pair(F146, p_146));
+		  q_coeff.insert(std::make_pair(F146, q_146));
+
+		  // FM 146
+		  int F147 = 147;
+		  std::vector<float> p_147;
+		  p_147.push_back(0.07431);
+		  p_147.push_back(0.07791);
+		  p_147.push_back(0.004384);
+
+		  std::vector<float> q_147;
+		  q_147.push_back(-2.668);
+		  q_147.push_back(0.04027);
+		  q_147.push_back(4.089);
+
+		  p_coeff.insert(std::make_pair(F147, p_147));
+		  q_coeff.insert(std::make_pair(F147, q_147));
+
+		  // FM 148
+		  int F148 = 148;
+		  std::vector<float> p_148;
+		  p_148.push_back(0.1238);
+		  p_148.push_back(0.07772);
+		  p_148.push_back(0.00647);
+
+		  std::vector<float> q_148;
+		  q_148.push_back(-2.506);
+		  q_148.push_back(0.03664);
+		  q_148.push_back(3.756);
+
+		  p_coeff.insert(std::make_pair(F148, p_148));
+		  q_coeff.insert(std::make_pair(F148, q_148));
+
+		  // FM 149
+		  int F149 = 149;
+		  std::vector<float> p_149;
+		  p_149.push_back(0.0667);
+		  p_149.push_back(0.07779);
+		  p_149.push_back(0.003506);
+
+		  std::vector<float> q_149;
+		  q_149.push_back(-3.209);
+		  q_149.push_back(0.03641);
+		  q_149.push_back(4.839);
+
+		  p_coeff.insert(std::make_pair(F149, p_149));
+		  q_coeff.insert(std::make_pair(F149, q_149));
+
+		  // FM 161
+		  int F161 = 161;
+		  std::vector<float> p_161;
+		  p_161.push_back(2.616);
+		  p_161.push_back(0.1744);
+		  p_161.push_back(0.1004);
+
+		  std::vector<float> q_161;
+		  q_161.push_back(-0.867);
+		  q_161.push_back(0.08398);
+		  q_161.push_back(1.326);
+
+		  p_coeff.insert(std::make_pair(F161, p_161));
+		  q_coeff.insert(std::make_pair(F161, q_161));
+
+		  // FM 162
+		  int F162 = 162;
+		  std::vector<float> p_162;
+		  p_162.push_back(0.6444);
+		  p_162.push_back(0.1574);
+		  p_162.push_back(0.02134);
+
+		  std::vector<float> q_162;
+		  q_162.push_back(-1.347);
+		  q_162.push_back(0.0649);
+		  q_162.push_back(1.958);
+
+		  p_coeff.insert(std::make_pair(F162, p_162));
+		  q_coeff.insert(std::make_pair(F162, q_162));
+
+		  // FM 163
+		  int F163 = 163;
+		  std::vector<float> p_163;
+		  p_163.push_back(0.08987);
+		  p_163.push_back(0.07819);
+		  p_163.push_back(0.003927);
+
+		  std::vector<float> q_163;
+		  q_163.push_back(-2.419);
+		  q_163.push_back(0.03439);
+		  q_163.push_back(3.493);
+
+		  p_coeff.insert(std::make_pair(F163, p_163));
+		  q_coeff.insert(std::make_pair(F163, q_163));
+
+		  // FM 164
+		  int F164 = 164;
+		  std::vector<float> p_164;
+		  p_164.push_back(0.1843);
+		  p_164.push_back(0.07912);
+		  p_164.push_back(0.005477);
+
+		  std::vector<float> q_164;
+		  q_164.push_back(-2.661);
+		  q_164.push_back(0.0271);
+		  q_164.push_back(3.579);
+
+		  p_coeff.insert(std::make_pair(F164, p_164));
+		  q_coeff.insert(std::make_pair(F164, q_164));
+
+		  // FM 165
+		  int F165 = 165;
+		  std::vector<float> p_165;
+		  p_165.push_back(0.3291);
+		  p_165.push_back(0.07679);
+		  p_165.push_back(0.02046);
+
+		  std::vector<float> q_165;
+		  q_165.push_back(-1.891);
+		  q_165.push_back(0.03665);
+		  q_165.push_back(3.027);
+
+		  p_coeff.insert(std::make_pair(F165, p_165));
+		  q_coeff.insert(std::make_pair(F165, q_165));
+
+		  // FM 181
+		  int F181 = 181;
+		  std::vector<float> p_181;
+		  p_181.push_back(14.96);
+		  p_181.push_back(0.401);
+		  p_181.push_back(1.983);
+
+		  std::vector<float> q_181;
+		  q_181.push_back(-0.1525);
+		  q_181.push_back(0.4018);
+		  q_181.push_back(0.4484);
+
+		  p_coeff.insert(std::make_pair(F181, p_181));
+		  q_coeff.insert(std::make_pair(F181, q_181));
+
+		  // FM 182
+		  int F182 = 182;
+		  std::vector<float> p_182;
+		  p_182.push_back(11.01);
+		  p_182.push_back(0.3366);
+		  p_182.push_back(0.7639);
+
+		  std::vector<float> q_182;
+		  q_182.push_back(-0.3704);
+		  q_182.push_back(0.202);
+		  q_182.push_back(0.6365);
+
+		  p_coeff.insert(std::make_pair(F182, p_182));
+		  q_coeff.insert(std::make_pair(F182, q_182));
+
+		  // FM 183
+		  int F183 = 183;
+		  std::vector<float> p_183;
+		  p_183.push_back(10.09);
+		  p_183.push_back(0.3454);
+		  p_183.push_back(0.584);
+
+		  std::vector<float> q_183;
+		  q_183.push_back(-0.4398);
+		  q_183.push_back(0.1448);
+		  q_183.push_back(0.7804);
+
+		  p_coeff.insert(std::make_pair(F183, p_183));
+		  q_coeff.insert(std::make_pair(F183, q_183));
+
+		  // FM 185
+		  int F185 = 185;
+		  std::vector<float> p_185;
+		  p_185.push_back(2.195);
+		  p_185.push_back(0.1807);
+		  p_185.push_back(0.07939);
+
+		  std::vector<float> q_185;
+		  q_185.push_back(-0.8838);
+		  q_185.push_back(0.08234);
+		  q_185.push_back(1.368);
+
+		  p_coeff.insert(std::make_pair(F185, p_185));
+		  q_coeff.insert(std::make_pair(F185, q_185));
+
+		  // FM 186
+		  int F186 = 186;
+		  std::vector<float> p_186;
+		  p_186.push_back(0.9183);
+		  p_186.push_back(0.1224);
+		  p_186.push_back(0.02969);
+
+		  std::vector<float> q_186;
+		  q_186.push_back(-1.306);
+		  q_186.push_back(0.04578);
+		  q_186.push_back(1.908);
+
+		  p_coeff.insert(std::make_pair(F186, p_186));
+		  q_coeff.insert(std::make_pair(F186, q_186));
+
+		  // FM 188
+		  int F188 = 188;
+		  std::vector<float> p_188;
+		  p_188.push_back(0.4789);
+		  p_188.push_back(0.07735);
+		  p_188.push_back(0.0195);
+
+		  std::vector<float> q_188;
+		  q_188.push_back(-1.68);
+		  q_188.push_back(0.02617);
+		  q_188.push_back(2.451);
+
+		  p_coeff.insert(std::make_pair(F188, p_188));
+		  q_coeff.insert(std::make_pair(F188, q_188));
+
+		  // FM 189
+		  int F189 = 189;
+		  std::vector<float> p_189;
+		  p_189.push_back(0.3229);
+		  p_189.push_back(0.07716);
+		  p_189.push_back(0.01346);
+
+		  std::vector<float> q_189;
+		  q_189.push_back(-1.916);
+		  q_189.push_back(0.02961);
+		  q_189.push_back(2.816);
+
+		  p_coeff.insert(std::make_pair(F189, p_189));
+		  q_coeff.insert(std::make_pair(F189, q_189));	
+	}
+	
+	if (scenario == 2){
+		  // Populate them
+		  // FM 101
+		  int F101 = 101;
+		  std::vector<float> p_101;
+		  p_101.push_back(4.941);
+		  p_101.push_back(0.7086);
+		  p_101.push_back(0.2124);
+
+		  std::vector<float> q_101;
+		  q_101.push_back(-0.4535);
+		  q_101.push_back(0.2682);
+		  q_101.push_back(0.777);
+
+		  p_coeff.insert(std::make_pair(F101, p_101));
+		  q_coeff.insert(std::make_pair(F101, q_101));
+
+		  // FM 102
+		  int F102 = 102;
+		  std::vector<float> p_102;
+		  p_102.push_back(0.8112);
+		  p_102.push_back(0.3045);
+		  p_102.push_back(0.02528);
+
+		  std::vector<float> q_102;
+		  q_102.push_back(-1.036);
+		  q_102.push_back(0.1385);
+		  q_102.push_back(1.561);
+
+		  p_coeff.insert(std::make_pair(F102, p_102));
+		  q_coeff.insert(std::make_pair(F102, q_102));
+
+		  // FM 103
+		  int F103 = 103;
+		  std::vector<float> p_103;
+		  p_103.push_back(0.3609);
+		  p_103.push_back(0.2318);
+		  p_103.push_back(0.01738);
+
+		  std::vector<float> q_103;
+		  q_103.push_back(-1.273);
+		  q_103.push_back(0.1135);
+		  q_103.push_back(1.966);
+
+		  p_coeff.insert(std::make_pair(F103, p_103));
+		  q_coeff.insert(std::make_pair(F103, q_103));
 
 
-       if(firetype=='c')
-        {
-         hptr->cfb=crown_frac_burn(at->rss,at->rso);
-         hptr->fd=fire_description(hptr->cfb);
-         hptr->ros=final_ros(data,at->fmc,at->isi,hptr->cfb,at->rss);
-         hptr->cfc=crown_consump(data,(*ptr),hptr->cfb);
-         hptr->fc=hptr->cfc+at->sfc;
-         hptr->fi=fire_intensity(hptr->fc,hptr->ros);
-        }
-     }
-    if(at->covertype=='n' || firetype=='s')
-     {
-      hptr->fd='S';
-      hptr->ros=at->rss;
-      hptr->fc=at->sfc;
-      hptr->fi=at->sfi;
-      hptr->cfb=0.0;
-     }
-    sec->lb=l_to_b(data->fueltype,at->wsv);
-    bptr->isi=backfire_isi(at);
-    bptr->rss=backfire_ros(data,(*ptr),at,bptr->isi);
-    fptr->rss=flankfire_ros(hptr->rss,bptr->rss,sec->lb);
-    bptr->fi=fire_behaviour(data,(*ptr),at,bptr);
-    fptr->ros=flankfire_ros(hptr->ros,bptr->ros,sec->lb );
-    fptr->fi=flank_fire_behaviour(data,(*ptr),at,fptr);
+		  // FM 104
+		  int F104 = 104;
+		  std::vector<float> p_104;
+		  p_104.push_back(0.1486);
+		  p_104.push_back(0.153);
+		  p_104.push_back(0.004652);
 
-    if(data->pattern==1 && data->time>0)
-      {
-        accn=acceleration(data,hptr->cfb);
-        hptr->dist=spread_distance(data,hptr,accn);
-        bptr->dist=spread_distance(data,bptr,accn);
-        fptr->dist=flank_spread_distance(data,fptr,sec,hptr->rost,bptr->rost,
-            hptr->dist,bptr->dist,sec->lb,accn);
-        hptr->time=time_to_crown(hptr->ros,at->rso,accn);
-        fptr->time=time_to_crown(fptr->ros,at->rso,accn);
-        bptr->time=time_to_crown(bptr->ros,at->rso,accn);
-      }
-    else
-      {
-        set_all(hptr,data->time);
-        set_all(fptr,data->time);
-        set_all(bptr,data->time);
-      }
-    sec->area=area((hptr->dist+bptr->dist),fptr->dist);
-    if(data->pattern==1 && data->time>0) sec->perm=perimeter(hptr,bptr,sec,sec->lbt);
-    else sec->perm=perimeter(hptr,bptr,sec,sec->lb);
+		  std::vector<float> q_104;
+		  q_104.push_back(-1.98);
+		  q_104.push_back(0.06712);
+		  q_104.push_back(2.744);
+
+		  p_coeff.insert(std::make_pair(F104, p_104));
+		  q_coeff.insert(std::make_pair(F104, q_104));
+
+		  // FM 105
+		  int F105 = 105;
+		  std::vector<float> p_105;
+		  p_105.push_back(0.0681);
+		  p_105.push_back(0.07832);
+		  p_105.push_back(0.002926);
+
+		  std::vector<float> q_105;
+		  q_105.push_back(-2.578);
+		  q_105.push_back(0.03345);
+		  q_105.push_back(3.694);
+
+		  p_coeff.insert(std::make_pair(F105, p_105));
+		  q_coeff.insert(std::make_pair(F105, q_105));
+
+		  // FM 106
+		  int F106 = 106;
+		  std::vector<float> p_106;
+		  p_106.push_back(0.04896);
+		  p_106.push_back(0.07908);
+		  p_106.push_back(0.001631);
+
+		  std::vector<float> q_106;
+		  q_106.push_back(-3.334);
+		  q_106.push_back(0.03012);
+		  q_106.push_back(4.525);
+
+		  p_coeff.insert(std::make_pair(F106, p_106));
+		  q_coeff.insert(std::make_pair(F106, q_106));
+
+		  // FM 107
+		  int F107 = 107;
+		  std::vector<float> p_107;
+		  p_107.push_back(0.03528);
+		  p_107.push_back(0.07869);
+		  p_107.push_back(0.001315);
+
+		  std::vector<float> q_107;
+		  q_107.push_back(-3.658);
+		  q_107.push_back(0.03158);
+		  q_107.push_back(5.09);
+
+		  p_coeff.insert(std::make_pair(F107, p_107));
+		  q_coeff.insert(std::make_pair(F107, q_107));
+
+		  // FM 108
+		  int F108 = 108;
+		  std::vector<float> p_108;
+		  p_108.push_back(0.04173);
+		  p_108.push_back(0.07796);
+		  p_108.push_back(0.002318);
+
+		  std::vector<float> q_108;
+		  q_108.push_back(-3.209);
+		  q_108.push_back(0.03823);
+		  q_108.push_back(4.86);
+
+		  p_coeff.insert(std::make_pair(F108, p_108));
+		  q_coeff.insert(std::make_pair(F108, q_108));
+
+		  // FM 121
+
+		  int F121 = 121;
+		  std::vector<float> p_121;
+		  p_121.push_back(1.64);
+		  p_121.push_back(0.2795);
+		  p_121.push_back(0.05015);
+
+		  std::vector<float> q_121;
+		  q_121.push_back(-0.9854);
+		  q_121.push_back(0.1202);
+		  q_121.push_back(1.392);
+
+		  p_coeff.insert(std::make_pair(F121, p_121));
+		  q_coeff.insert(std::make_pair(F121, q_121));
+
+		  // FM 122
+
+		  int F122 = 122;
+		  std::vector<float> p_122;
+		  p_122.push_back(0.4834);
+		  p_122.push_back(0.1577);
+		  p_122.push_back(0.01499);
+
+		  std::vector<float> q_122;
+		  q_122.push_back(-1.486);
+		  q_122.push_back(0.06882);
+		  q_122.push_back(2.084);
+
+		  p_coeff.insert(std::make_pair(F122, p_122));
+		  q_coeff.insert(std::make_pair(F122, q_122));
+
+		  // FM 123
+
+		  int F123 = 123;
+		  std::vector<float> p_123;
+		  p_123.push_back(0.1385);
+		  p_123.push_back(0.08614);
+		  p_123.push_back(0.005977);
+
+		  std::vector<float> q_123;
+		  q_123.push_back(-2.108);
+		  q_123.push_back(0.03642);
+		  q_123.push_back(3.029);
+
+		  p_coeff.insert(std::make_pair(F123, p_123));
+		  q_coeff.insert(std::make_pair(F123, q_123));
+
+		  // FM 124
+
+		  int F124 = 124;
+		  std::vector<float> p_124;
+		  p_124.push_back(0.1333);
+		  p_124.push_back(0.07794);
+		  p_124.push_back(0.005812);
+
+		  std::vector<float> q_124;
+		  q_124.push_back(-2.963);
+		  q_124.push_back(0.03259);
+		  q_124.push_back(4.318);
+
+		  p_coeff.insert(std::make_pair(F124, p_124));
+		  q_coeff.insert(std::make_pair(F124, q_124));
+
+		  // FM 142
+
+		  int F142 = 142;
+		  std::vector<float> p_142;
+		  p_142.push_back(3.016);
+		  p_142.push_back(0.1405);
+		  p_142.push_back(0.117);
+
+		  std::vector<float> q_142;
+		  q_142.push_back(-0.8923);
+		  q_142.push_back(0.06068);
+		  q_142.push_back(1.351);
+
+		  p_coeff.insert(std::make_pair(F142, p_142));
+		  q_coeff.insert(std::make_pair(F142, q_142));
+
+		  // FM 143
+
+		  int F143 = 143;
+		  std::vector<float> p_143;
+		  p_143.push_back(3.263);
+		  p_143.push_back(0.1853);
+		  p_143.push_back(0.1567);
+
+		  std::vector<float> q_143;
+		  q_143.push_back(-0.7716);
+		  q_143.push_back(0.08453);
+		  q_143.push_back(1.244);
+
+		  p_coeff.insert(std::make_pair(F143, p_143));
+		  q_coeff.insert(std::make_pair(F143, q_143));
+
+		  // FM 144
+
+		  int F144 = 144;
+		  std::vector<float> p_144;
+		  p_144.push_back(0.2209);
+		  p_144.push_back(0.1077);
+		  p_144.push_back(0.00858);
+
+		  std::vector<float> q_144;
+		  q_144.push_back(-1.841);
+		  q_144.push_back(0.04621);
+		  q_144.push_back(2.634);
+
+		  p_coeff.insert(std::make_pair(F144, p_144));
+		  q_coeff.insert(std::make_pair(F144, q_144));
+
+		  // FM 145
+
+		  int F145 = 145;
+		  std::vector<float> p_145;
+		  p_145.push_back(0.07661);
+		  p_145.push_back(0.07807);
+		  p_145.push_back(0.004418);
+
+		  std::vector<float> q_145;
+		  q_145.push_back(-2.425);
+		  q_145.push_back(0.03922);
+		  q_145.push_back(3.681);
+
+		  p_coeff.insert(std::make_pair(F145, p_145));
+		  q_coeff.insert(std::make_pair(F145, q_145));
+
+		  // FM 146
+
+		  int F146 = 146;
+		  std::vector<float> p_146;
+		  p_146.push_back(0.1924);
+		  p_146.push_back(0.07805);
+		  p_146.push_back(0.01232);
+
+		  std::vector<float> q_146;
+		  q_146.push_back(-1.864);
+		  q_146.push_back(0.04114);
+		  q_146.push_back(2.908);
+
+		  p_coeff.insert(std::make_pair(F146, p_146));
+		  q_coeff.insert(std::make_pair(F146, q_146));
+
+		  // FM 146
+
+		  int F147 = 147;
+		  std::vector<float> p_147;
+		  p_147.push_back(0.118);
+		  p_147.push_back(0.07792);
+		  p_147.push_back(0.006965);
+
+		  std::vector<float> q_147;
+		  q_147.push_back(-2.312);
+		  q_147.push_back(0.03944);
+		  q_147.push_back(3.548);
+
+		  p_coeff.insert(std::make_pair(F147, p_147));
+		  q_coeff.insert(std::make_pair(F147, q_147));
+
+		  // FM 148
+
+		  int F148 = 148;
+		  std::vector<float> p_148;
+		  p_148.push_back(0.1863);
+		  p_148.push_back(0.07774);
+		  p_148.push_back(0.009734);
+
+		  std::vector<float> q_148;
+		  q_148.push_back(-2.218);
+		  q_148.push_back(0.03714);
+		  q_148.push_back(3.323);
+
+		  p_coeff.insert(std::make_pair(F148, p_148));
+		  q_coeff.insert(std::make_pair(F148, q_148));
+
+		  // FM 149
+
+		  int F149 = 149;
+		  std::vector<float> p_149;
+		  p_149.push_back(0.1014);
+		  p_149.push_back(0.07776);
+		  p_149.push_back(0.005332);
+
+		  std::vector<float> q_149;
+		  q_149.push_back(-2.845);
+		  q_149.push_back(0.03678);
+		  q_149.push_back(4.283);
+
+		  p_coeff.insert(std::make_pair(F149, p_149));
+		  q_coeff.insert(std::make_pair(F149, q_149));
+
+		  // FM 161
+
+		  int F161 = 161;
+		  std::vector<float> p_161;
+		  p_161.push_back(5.028);
+		  p_161.push_back(0.2037);
+		  p_161.push_back(0.1978);
+
+		  std::vector<float> q_161;
+		  q_161.push_back(-0.7292);
+		  q_161.push_back(0.08708);
+		  q_161.push_back(1.115);
+
+		  p_coeff.insert(std::make_pair(F161, p_161));
+		  q_coeff.insert(std::make_pair(F161, q_161));
+
+		  // FM 162
+
+		  int F162 = 162;
+		  std::vector<float> p_162;
+		  p_162.push_back(1.128);
+		  p_162.push_back(0.1848);
+		  p_162.push_back(0.03716);
+
+		  std::vector<float> q_162;
+		  q_162.push_back(-1.119);
+		  q_162.push_back(0.07944);
+		  q_162.push_back(1.645);
+
+		  p_coeff.insert(std::make_pair(F162, p_162));
+		  q_coeff.insert(std::make_pair(F162, q_162));
+
+		  // FM 163
+
+		  int F163 = 163;
+		  std::vector<float> p_163;
+		  p_163.push_back(0.1554);
+		  p_163.push_back(0.08058);
+		  p_163.push_back(0.006821);
+
+		  std::vector<float> q_163;
+		  q_163.push_back(-2.03);
+		  q_163.push_back(0.03518);
+		  q_163.push_back(2.943);
+
+		  p_coeff.insert(std::make_pair(F163, p_163));
+		  q_coeff.insert(std::make_pair(F163, q_163));
+
+		  // FM 164
+
+		  int F164 = 164;
+		  std::vector<float> p_164;
+		  p_164.push_back(0.272);
+		  p_164.push_back(0.07915);
+		  p_164.push_back(0.008083);
+
+		  std::vector<float> q_164;
+		  q_164.push_back(-2.345);
+		  q_164.push_back(0.02613);
+		  q_164.push_back(3.187);
+
+		  p_coeff.insert(std::make_pair(F164, p_164));
+		  q_coeff.insert(std::make_pair(F164, q_164));
+
+		  // FM 165
+
+		  int F165 = 165;
+		  std::vector<float> p_165;
+		  p_165.push_back(0.4786);
+		  p_165.push_back(0.0766);
+		  p_165.push_back(0.02979);
+
+		  std::vector<float> q_165;
+		  q_165.push_back(-1.676);
+		  q_165.push_back(0.03638);
+		  q_165.push_back(2.685);
+
+		  p_coeff.insert(std::make_pair(F165, p_165));
+		  q_coeff.insert(std::make_pair(F165, q_165));
+
+		  // FM 181
+
+		  int F181 = 181;
+		  std::vector<float> p_181;
+		  p_181.push_back(21.49);
+		  p_181.push_back(0.5351);
+		  p_181.push_back(3.327);
+
+		  std::vector<float> q_181;
+		  q_181.push_back(-0.1561);
+		  q_181.push_back(0.1462);
+		  q_181.push_back(0.4506);
+
+		  p_coeff.insert(std::make_pair(F181, p_181));
+		  q_coeff.insert(std::make_pair(F181, q_181));
+
+		  // FM 182
+
+		  int F182 = 182;
+		  std::vector<float> p_182;
+		  p_182.push_back(11.87);
+		  p_182.push_back(0.3804);
+		  p_182.push_back(1.424);
+
+		  std::vector<float> q_182;
+		  q_182.push_back(-0.2634);
+		  q_182.push_back(0.2267);
+		  q_182.push_back(0.55);
+
+		  p_coeff.insert(std::make_pair(F182, p_182));
+		  q_coeff.insert(std::make_pair(F182, q_182));
+
+		  // FM 183
+
+		  int F183 = 183;
+		  std::vector<float> p_183;
+		  p_183.push_back(16.14);
+		  p_183.push_back(0.4104);
+		  p_183.push_back(0.9961);
+
+		  std::vector<float> q_183;
+		  q_183.push_back(-0.3704);
+		  q_183.push_back(0.2021);
+		  q_183.push_back(0.6365);
+
+		  p_coeff.insert(std::make_pair(F183, p_183));
+		  q_coeff.insert(std::make_pair(F183, q_183));
+
+		  // FM 185
+
+		  int F185 = 185;
+		  std::vector<float> p_185;
+		  p_185.push_back(4.008);
+		  p_185.push_back(0.2228);
+		  p_185.push_back(0.1393);
+
+		  std::vector<float> q_185;
+		  q_185.push_back(-0.7146);
+		  q_185.push_back(0.09259);
+		  q_185.push_back(1.158);
+
+		  p_coeff.insert(std::make_pair(F185, p_185));
+		  q_coeff.insert(std::make_pair(F185, q_185));
+
+		  // FM 186
+
+		  int F186 = 186;
+		  std::vector<float> p_186;
+		  p_186.push_back(1.783);
+		  p_186.push_back(0.1537);
+		  p_186.push_back(0.05478);
+
+		  std::vector<float> q_186;
+		  q_186.push_back(-1.056);
+		  q_186.push_back(0.06279);
+		  q_186.push_back(1.538);
+
+		  p_coeff.insert(std::make_pair(F186, p_186));
+		  q_coeff.insert(std::make_pair(F186, q_186));
+
+		  // FM 188
+
+		  int F188 = 188;
+		  std::vector<float> p_188;
+		  p_188.push_back(0.8048);
+		  p_188.push_back(0.09159);
+		  p_188.push_back(0.03249);
+
+		  std::vector<float> q_188;
+		  q_188.push_back(-1.364);
+		  q_188.push_back(0.03338);
+		  q_188.push_back(2.04);
+
+		  p_coeff.insert(std::make_pair(F188, p_188));
+		  q_coeff.insert(std::make_pair(F188, q_188));
+
+		  // FM 189
+
+		  int F189 = 189;
+		  std::vector<float> p_189;
+		  p_189.push_back(0.4263);
+		  p_189.push_back(0.07714);
+		  p_189.push_back(0.01775);
+
+		  std::vector<float> q_189;
+		  q_189.push_back(-1.758);
+		  q_189.push_back(0.03012);
+		  q_189.push_back(2.544);
+
+		  p_coeff.insert(std::make_pair(F189, p_189));
+		  q_coeff.insert(std::make_pair(F189, q_189));
+		
+	}
+
+	if (scenario == 3){
+		
+		// Populate them
+	  // FM 101
+		int F101 = 101;
+		std::vector<float> p_101;
+		p_101.push_back(10.54);
+		p_101.push_back(0.9248);
+		p_101.push_back(0.6665);
+
+		std::vector<float> q_101;
+		q_101.push_back(-0.2781);
+		q_101.push_back(0.4427);
+		q_101.push_back(0.5494);
+
+		p_coeff.insert(std::make_pair(F101, p_101));
+		q_coeff.insert(std::make_pair(F101, q_101));
+
+	  // FM 102
+	  int F102 = 102;
+	  std::vector<float> p_102;
+	  p_102.push_back(9.046);
+	  p_102.push_back(0.6935);
+	  p_102.push_back(0.6243);
+
+	  std::vector<float> q_102;
+	  q_102.push_back(-0.2777);
+	  q_102.push_back(0.4381);
+	  q_102.push_back(0.5495);
+
+	  p_coeff.insert(std::make_pair(F102, p_102));
+	  q_coeff.insert(std::make_pair(F102, q_102));
+
+	  // FM 103
+	  int F103 = 103;
+	  std::vector<float> p_103;
+	  p_103.push_back(1.101);
+	  p_103.push_back(0.2945);
+	  p_103.push_back(0.05263);
+
+	  std::vector<float> q_103;
+	  q_103.push_back(-0.864);
+	  q_103.push_back(0.1465);
+	  q_103.push_back(1.422);
+
+	  p_coeff.insert(std::make_pair(F103, p_103));
+	  q_coeff.insert(std::make_pair(F103, q_103));
+
+
+	  // FM 104
+	  int F104 = 104;
+	  std::vector<float> p_104;
+	  p_104.push_back(2.828);
+	  p_104.push_back(0.4191);
+	  p_104.push_back(0.1083);
+
+	  std::vector<float> q_104;
+	  q_104.push_back(-0.6279);
+	  q_104.push_back(0.2175);
+	  q_104.push_back(1.004);
+
+	  p_coeff.insert(std::make_pair(F104, p_104));
+	  q_coeff.insert(std::make_pair(F104, q_104));
+
+	  // FM 105
+	  int F105 = 105;
+	  std::vector<float> p_105;
+	  p_105.push_back(0.2066);
+	  p_105.push_back(0.09646);
+	  p_105.push_back(0.008649);
+
+	  std::vector<float> q_105;
+	  q_105.push_back(-1.891);
+	  q_105.push_back(0.04173);
+	  q_105.push_back(2.707);
+
+	  p_coeff.insert(std::make_pair(F105, p_105));
+	  q_coeff.insert(std::make_pair(F105, q_105));
+
+	  // FM 106
+	  int F106 = 106;
+	  std::vector<float> p_106;
+	  p_106.push_back(0.1252);
+	  p_106.push_back(0.07909);
+	  p_106.push_back(0.004167);
+
+	  std::vector<float> q_106;
+	  q_106.push_back(-2.484);
+	  q_106.push_back(0.0302);
+	  q_106.push_back(3.375);
+
+	  p_coeff.insert(std::make_pair(F106, p_106));
+	  q_coeff.insert(std::make_pair(F106, q_106));
+
+	  // FM 107
+	  int F107 = 107;
+	  std::vector<float> p_107;
+	  p_107.push_back(0.2693);
+	  p_107.push_back(0.1079);
+	  p_107.push_back(0.009412);
+
+	  std::vector<float> q_107;
+	  q_107.push_back(-1.823);
+	  q_107.push_back(0.04448);
+	  q_107.push_back(2.545);
+
+	  p_coeff.insert(std::make_pair(F107, p_107));
+	  q_coeff.insert(std::make_pair(F107, q_107));
+
+	  // FM 108
+	  int F108 = 108;
+	  std::vector<float> p_108;
+	  p_108.push_back(0.09611);
+	  p_108.push_back(0.07795);
+	  p_108.push_back(0.005342);
+
+	  std::vector<float> q_108;
+	  q_108.push_back(-2.517);
+	  q_108.push_back(0.03868);
+	  q_108.push_back(3.788);
+
+	  p_coeff.insert(std::make_pair(F108, p_108));
+	  q_coeff.insert(std::make_pair(F108, q_108));
+
+	  // FM 121
+
+	  int F121 = 121;
+	  std::vector<float> p_121;
+	  p_121.push_back(25.52);
+	  p_121.push_back(0.7635);
+	  p_121.push_back(1.428);
+
+	  std::vector<float> q_121;
+	  q_121.push_back(-0.1525);
+	  q_121.push_back(0.4017);
+	  q_121.push_back(0.4484);
+
+	  p_coeff.insert(std::make_pair(F121, p_121));
+	  q_coeff.insert(std::make_pair(F121, q_121));
+
+	  // FM 122
+
+	  int F122 = 122;
+	  std::vector<float> p_122;
+	  p_122.push_back(8.922);
+	  p_122.push_back(0.4899);
+	  p_122.push_back(0.3328);
+
+	  std::vector<float> q_122;
+	  q_122.push_back(-0.4465);
+	  q_122.push_back(0.1749);
+	  q_122.push_back(0.7789);
+
+	  p_coeff.insert(std::make_pair(F122, p_122));
+	  q_coeff.insert(std::make_pair(F122, q_122));
+
+	  // FM 123
+
+	  int F123 = 123;
+	  std::vector<float> p_123;
+	  p_123.push_back(5.884);
+	  p_123.push_back(0.3888);
+	  p_123.push_back(0.2259);
+
+	  std::vector<float> q_123;
+	  q_123.push_back(-0.5876);
+	  q_123.push_back(0.1976);
+	  q_123.push_back(0.8988);
+
+	  p_coeff.insert(std::make_pair(F123, p_123));
+	  q_coeff.insert(std::make_pair(F123, q_123));
+
+	  // FM 124
+
+	  int F124 = 124;
+	  std::vector<float> p_124;
+	  p_124.push_back(0.6756);
+	  p_124.push_back(0.07785);
+	  p_124.push_back(0.02949);
+
+	  std::vector<float> q_124;
+	  q_124.push_back(-1.518);
+	  q_124.push_back(0.03362);
+	  q_124.push_back(2.179);
+
+	  p_coeff.insert(std::make_pair(F124, p_124));
+	  q_coeff.insert(std::make_pair(F124, q_124));
+
+	  // FM 142
+
+	  int F142 = 142;
+	  std::vector<float> p_142;
+	  p_142.push_back(10.39);
+	  p_142.push_back(0.2182);
+	  p_142.push_back(0.3807);
+
+	  std::vector<float> q_142;
+	  q_142.push_back(-0.5648);
+	  q_142.push_back(0.1069);
+	  q_142.push_back(0.9037);
+
+	  p_coeff.insert(std::make_pair(F142, p_142));
+	  q_coeff.insert(std::make_pair(F142, q_142));
+
+	  // FM 143
+
+	  int F143 = 143;
+	  std::vector<float> p_143;
+	  p_143.push_back(5.59);
+	  p_143.push_back(0.2107);
+	  p_143.push_back(0.254);
+
+	  std::vector<float> q_143;
+	  q_143.push_back(-0.6817);
+	  q_143.push_back(0.1007);
+	  q_143.push_back(1.064);
+
+	  p_coeff.insert(std::make_pair(F143, p_143));
+	  q_coeff.insert(std::make_pair(F143, q_143));
+
+	  // FM 144
+
+	  int F144 = 144;
+	  std::vector<float> p_144;
+	  p_144.push_back(5.257);
+	  p_144.push_back(0.3809);
+	  p_144.push_back(0.1807);
+
+	  std::vector<float> q_144;
+	  q_144.push_back(-0.6294);
+	  q_144.push_back(0.1919);
+	  q_144.push_back(0.9523);
+
+	  p_coeff.insert(std::make_pair(F144, p_144));
+	  q_coeff.insert(std::make_pair(F144, q_144));
+
+	  // FM 145
+
+	  int F145 = 145;
+	  std::vector<float> p_145;
+	  p_145.push_back(0.1073);
+	  p_145.push_back(0.0781);
+	  p_145.push_back(0.00619);
+
+	  std::vector<float> q_145;
+	  q_145.push_back(-2.173);
+	  q_145.push_back(0.04044);
+	  q_145.push_back(3.293);
+
+	  p_coeff.insert(std::make_pair(F145, p_145));
+	  q_coeff.insert(std::make_pair(F145, q_145));
+
+	  // FM 146
+
+	  int F146 = 146;
+	  std::vector<float> p_146;
+	  p_146.push_back(0.2664);
+	  p_146.push_back(0.07788);
+	  p_146.push_back(0.01707);
+
+	  std::vector<float> q_146;
+	  q_146.push_back(-1.698);
+	  q_146.push_back(0.03934);
+	  q_146.push_back(2.652);
+
+	  p_coeff.insert(std::make_pair(F146, p_146));
+	  q_coeff.insert(std::make_pair(F146, q_146));
+
+	  // FM 146
+
+	  int F147 = 147;
+	  std::vector<float> p_147;
+	  p_147.push_back(0.1651);
+	  p_147.push_back(0.07791);
+	  p_147.push_back(0.009743);
+
+	  std::vector<float> q_147;
+	  q_147.push_back(-2.084);
+	  q_147.push_back(0.03998);
+	  q_147.push_back(3.193);
+
+	  p_coeff.insert(std::make_pair(F147, p_147));
+	  q_coeff.insert(std::make_pair(F147, q_147));
+
+	  // FM 148
+
+	  int F148 = 148;
+	  std::vector<float> p_148;
+	  p_148.push_back(0.2704);
+	  p_148.push_back(0.07765);
+	  p_148.push_back(0.0141);
+
+	  std::vector<float> q_148;
+	  q_148.push_back(-1.978);
+	  q_148.push_back(0.03601);
+	  q_148.push_back(2.975);
+
+	  p_coeff.insert(std::make_pair(F148, p_148));
+	  q_coeff.insert(std::make_pair(F148, q_148));
+
+	  // FM 149
+
+	  int F149 = 149;
+	  std::vector<float> p_149;
+	  p_149.push_back(0.1391);
+	  p_149.push_back(0.07771);
+	  p_149.push_back(0.007329);
+
+	  std::vector<float> q_149;
+	  q_149.push_back(-2.626);
+	  q_149.push_back(0.03657);
+	  q_149.push_back(3.945);
+
+	  p_coeff.insert(std::make_pair(F149, p_149));
+	  q_coeff.insert(std::make_pair(F149, q_149));
+
+	  // FM 161
+
+	  int F161 = 161;
+	  std::vector<float> p_161;
+	  p_161.push_back(3180);
+	  p_161.push_back(1.235);
+	  p_161.push_back(3.332);
+
+	  std::vector<float> q_161;
+	  q_161.push_back(-0.1562);
+	  q_161.push_back(0.1467);
+	  q_161.push_back(0.4505);
+
+	  p_coeff.insert(std::make_pair(F161, p_161));
+	  q_coeff.insert(std::make_pair(F161, q_161));
+
+	  // FM 162
+
+	  int F162 = 162;
+	  std::vector<float> p_162;
+	  p_162.push_back(1.631);
+	  p_162.push_back(0.2024);
+	  p_162.push_back(0.05519);
+
+	  std::vector<float> q_162;
+	  q_162.push_back(-0.9908);
+	  q_162.push_back(0.08943);
+	  q_162.push_back(1.472);
+
+	  p_coeff.insert(std::make_pair(F162, p_162));
+	  q_coeff.insert(std::make_pair(F162, q_162));
+
+	  // FM 163
+
+	  int F163 = 163;
+	  std::vector<float> p_163;
+	  p_163.push_back(0.3075);
+	  p_163.push_back(0.09702);
+	  p_163.push_back(0.01307);
+
+	  std::vector<float> q_163;
+	  q_163.push_back(-1.705);
+	  q_163.push_back(0.04277);
+	  q_163.push_back(2.452);
+
+	  p_coeff.insert(std::make_pair(F163, p_163));
+	  q_coeff.insert(std::make_pair(F163, q_163));
+
+	  // FM 164
+
+	  int F164 = 164;
+	  std::vector<float> p_164;
+	  p_164.push_back(0.4047);
+	  p_164.push_back(0.0793);
+	  p_164.push_back(0.01199);
+
+	  std::vector<float> q_164;
+	  q_164.push_back(-2.052);
+	  q_164.push_back(0.02663);
+	  q_164.push_back(2.765);
+
+	  p_coeff.insert(std::make_pair(F164, p_164));
+	  q_coeff.insert(std::make_pair(F164, q_164));
+
+	  // FM 165
+
+	  int F165 = 165;
+	  std::vector<float> p_165;
+	  p_165.push_back(0.6448);
+	  p_165.push_back(0.07668);
+	  p_165.push_back(0.03998);
+
+	  std::vector<float> q_165;
+	  q_165.push_back(-1.521);
+	  q_165.push_back(0.03838);
+	  q_165.push_back(2.417);
+
+	  p_coeff.insert(std::make_pair(F165, p_165));
+	  q_coeff.insert(std::make_pair(F165, q_165));
+
+	  // FM 181
+
+	  int F181 = 181;
+	  std::vector<float> p_181;
+	  p_181.push_back(1800);
+	  p_181.push_back(1.178);
+	  p_181.push_back(4.999);
+
+	  std::vector<float> q_181;
+	  q_181.push_back(0.0);
+	  q_181.push_back(0.0);
+	  q_181.push_back(0.0);
+
+	  p_coeff.insert(std::make_pair(F181, p_181));
+	  q_coeff.insert(std::make_pair(F181, q_181));
+
+	  // FM 182
+
+	  int F182 = 182;
+	  std::vector<float> p_182;
+	  p_182.push_back(38.8);
+	  p_182.push_back(0.5491);
+	  p_182.push_back(1.989);
+
+	  std::vector<float> q_182;
+	  q_182.push_back(-0.2492);
+	  q_182.push_back(0.1422);
+	  q_182.push_back(0.5509);
+
+	  p_coeff.insert(std::make_pair(F182, p_182));
+	  q_coeff.insert(std::make_pair(F182, q_182));
+
+	  // FM 183
+
+	  int F183 = 183;
+	  std::vector<float> p_183;
+	  p_183.push_back(11.37);
+	  p_183.push_back(0.3397);
+	  p_183.push_back(1.244);
+
+	  std::vector<float> q_183;
+	  q_183.push_back(-0.3582);
+	  q_183.push_back(0.1543);
+	  q_183.push_back(0.6369);
+
+	  p_coeff.insert(std::make_pair(F183, p_183));
+	  q_coeff.insert(std::make_pair(F183, q_183));
+
+	  // FM 185
+
+	  int F185 = 185;
+	  std::vector<float> p_185;
+	  p_185.push_back(5.163);
+	  p_185.push_back(0.2396);
+	  p_185.push_back(0.1943);
+
+	  std::vector<float> q_185;
+	  q_185.push_back(-0.6817);
+	  q_185.push_back(0.1007);
+	  q_185.push_back(1.064);
+
+	  p_coeff.insert(std::make_pair(F185, p_185));
+	  q_coeff.insert(std::make_pair(F185, q_185));
+
+	  // FM 186
+
+	  int F186 = 186;
+	  std::vector<float> p_186;
+	  p_186.push_back(2.555);
+	  p_186.push_back(0.171);
+	  p_186.push_back(0.07786);
+
+	  std::vector<float> q_186;
+	  q_186.push_back(-0.9478);
+	  q_186.push_back(0.07391);
+	  q_186.push_back(1.375);
+
+	  p_coeff.insert(std::make_pair(F186, p_186));
+	  q_coeff.insert(std::make_pair(F186, q_186));
+
+	  // FM 188
+
+	  int F188 = 188;
+	  std::vector<float> p_188;
+	  p_188.push_back(1.294);
+	  p_188.push_back(0.1085);
+	  p_188.push_back(0.04999);
+
+	  std::vector<float> q_188;
+	  q_188.push_back(-1.184);
+	  q_188.push_back(0.04144);
+	  q_188.push_back(1.768);
+
+	  p_coeff.insert(std::make_pair(F188, p_188));
+	  q_coeff.insert(std::make_pair(F188, q_188));
+
+	  // FM 189
+
+	  int F189 = 189;
+	  std::vector<float> p_189;
+	  p_189.push_back(0.534);
+	  p_189.push_back(0.07749);
+	  p_189.push_back(0.02216);
+
+	  std::vector<float> q_189;
+	  q_189.push_back(-1.624);
+	  q_189.push_back(0.02893);
+	  q_189.push_back(2.369);
+
+	  p_coeff.insert(std::make_pair(F189, p_189));
+	  q_coeff.insert(std::make_pair(F189, q_189));
+		
+	}
+	
+	if (scenario == 4){
+		// Populate them
+	  // FM 101
+		int F101 = 101;
+		std::vector<float> p_101;
+		std::vector<float> q_101;
+		p_101.push_back(0.);
+  	    p_101.push_back(0.);
+		p_101.push_back(-1.);
+		q_101.push_back(0.);
+	    q_101.push_back(0.);
+	    q_101.push_back(0.);
+		p_coeff.insert(std::make_pair(F101, p_101));
+		q_coeff.insert(std::make_pair(F101, q_101));
+
+	  // FM 102
+	  int F102 = 102;
+	  std::vector<float> p_102;
+	  std::vector<float> q_102;
+	  p_102.push_back(0.);
+  	  p_102.push_back(0.);
+	  p_102.push_back(-1.);
+	  q_102.push_back(0.);
+	  q_102.push_back(0.);
+	  q_102.push_back(0.);
+	  p_coeff.insert(std::make_pair(F102, p_102));
+	  q_coeff.insert(std::make_pair(F102, q_102));
+
+	  // FM 103
+	  int F103 = 103;
+	  std::vector<float> p_103;
+	  p_103.push_back(1.02e+04);
+	  p_103.push_back(2.51);
+	  p_103.push_back(10);
+
+	  std::vector<float> q_103;
+	  q_103.push_back(-0.3984);
+	  q_103.push_back(0.6339);
+	  q_103.push_back(0.3173);
+
+	  p_coeff.insert(std::make_pair(F103, p_103));
+	  q_coeff.insert(std::make_pair(F103, q_103));
+
+
+	  // FM 104
+	  int F104 = 104;
+	  std::vector<float> p_104;
+	  p_104.push_back(1706);
+	  p_104.push_back(5.835);
+	  p_104.push_back(4.999);
+
+	  std::vector<float> q_104;
+	  q_104.push_back(-0.3984);
+	  q_104.push_back(0.6331);
+	  q_104.push_back(0.3173);
+
+	  p_coeff.insert(std::make_pair(F104, p_104));
+	  q_coeff.insert(std::make_pair(F104, q_104));
+
+	  // FM 105
+	  int F105 = 105;
+	  std::vector<float> p_105;
+	  p_105.push_back(24.51);
+	  p_105.push_back(0.6818);
+	  p_105.push_back(1.665);
+
+	  std::vector<float> q_105;
+	  q_105.push_back(-0.1528);
+	  q_105.push_back(0.4083);
+	  q_105.push_back(0.4483);
+
+	  p_coeff.insert(std::make_pair(F105, p_105));
+	  q_coeff.insert(std::make_pair(F105, q_105));
+
+	  // FM 106
+	  int F106 = 106;
+	  std::vector<float> p_106;
+	  std::vector<float> q_106;
+	  p_106.push_back(0.);
+  	  p_106.push_back(0.);
+      p_106.push_back(-1.);
+	  q_106.push_back(0.);
+	  q_106.push_back(0.);
+	  q_106.push_back(0.);
+	  p_coeff.insert(std::make_pair(F106, p_106));
+	  q_coeff.insert(std::make_pair(F106, q_106));
+
+	  // FM 107
+	  int F107 = 107;
+	  std::vector<float> p_107;
+	  p_107.push_back(8.706);
+	  p_107.push_back(0.397);
+	  p_107.push_back(0.3983);
+
+	  std::vector<float> q_107;
+	  q_107.push_back(-0.5259);
+	  q_107.push_back(0.19);
+	  q_107.push_back(0.7787);
+
+	  p_coeff.insert(std::make_pair(F107, p_107));
+	  q_coeff.insert(std::make_pair(F107, q_107));
+
+	  // FM 108
+	  int F108 = 108;
+	  std::vector<float> p_108;
+	  p_108.push_back(29.63);
+	  p_108.push_back(0.6425);
+	  p_108.push_back(1.246);
+
+	  std::vector<float> q_108;
+	  q_108.push_back(-0.2634);
+	  q_108.push_back(0.2268);
+	  q_108.push_back(0.55);
+
+	  p_coeff.insert(std::make_pair(F108, p_108));
+	  q_coeff.insert(std::make_pair(F108, q_108));
+
+	  // FM 121
+
+	  int F121 = 121;
+	  std::vector<float> p_121;
+	  p_121.push_back(1.02e+04);
+	  p_121.push_back(2.505);
+	  p_121.push_back(10);
+
+	  std::vector<float> q_121;
+	  q_121.push_back(-0.3942);
+	  q_121.push_back(0.6206);
+	  q_121.push_back(0.3174);
+
+	  p_coeff.insert(std::make_pair(F121, p_121));
+	  q_coeff.insert(std::make_pair(F121, q_121));
+
+	  // FM 122
+
+	  int F122 = 122;
+	  std::vector<float> p_122;
+	  p_122.push_back(25.02);
+	  p_122.push_back(0.7935);
+	  p_122.push_back(2);
+
+	  std::vector<float> q_122;
+	  q_122.push_back(-0.153);
+	  q_122.push_back(0.4129);
+	  q_122.push_back(0.4483);
+
+	  p_coeff.insert(std::make_pair(F122, p_122));
+	  q_coeff.insert(std::make_pair(F122, q_122));
+
+	  // FM 123
+
+	  int F123 = 123;
+	  std::vector<float> p_123;
+	  p_123.push_back(2423);
+	  p_123.push_back(5.898);
+	  p_123.push_back(3.333);
+
+	  std::vector<float> q_123;
+	  q_123.push_back(-0.271);
+	  q_123.push_back(0.2323);
+	  q_123.push_back(0.4489);
+
+	  p_coeff.insert(std::make_pair(F123, p_123));
+	  q_coeff.insert(std::make_pair(F123, q_123));
+
+	  // FM 124
+
+	  int F124 = 124;
+	  std::vector<float> p_124;
+	  p_124.push_back(3.313);
+	  p_124.push_back(0.1361);
+	  p_124.push_back(0.1345);
+
+	  std::vector<float> q_124;
+	  q_124.push_back(-0.8735);
+	  q_124.push_back(0.06301);
+	  q_124.push_back(1.305);
+
+	  p_coeff.insert(std::make_pair(F124, p_124));
+	  q_coeff.insert(std::make_pair(F124, q_124));
+
+	  // FM 142
+
+	  int F142 = 142;
+	  std::vector<float> p_142;
+	  p_142.push_back(23.95);
+	  p_142.push_back(0.3007);
+	  p_142.push_back(0.9045);
+
+	  std::vector<float> q_142;
+	  q_142.push_back(-0.4438);
+	  q_142.push_back(0.1155);
+	  q_142.push_back(0.7152);
+
+	  p_coeff.insert(std::make_pair(F142, p_142));
+	  q_coeff.insert(std::make_pair(F142, q_142));
+
+	  // FM 143
+
+	  int F143 = 143;
+	  std::vector<float> p_143;
+	  p_143.push_back(8.823);
+	  p_143.push_back(0.2347);
+	  p_143.push_back(0.3672);
+
+	  std::vector<float> q_143;
+	  q_143.push_back(-0.602);
+	  q_143.push_back(0.1209);
+	  q_143.push_back(0.9543);
+
+	  p_coeff.insert(std::make_pair(F143, p_143));
+	  q_coeff.insert(std::make_pair(F143, q_143));
+
+	  // FM 144
+
+	  int F144 = 144;
+	  std::vector<float> p_144;
+	  p_144.push_back(6.334);
+	  p_144.push_back(0.3903);
+	  p_144.push_back(0.2486);
+
+	  std::vector<float> q_144;
+	  q_144.push_back(-0.5751);
+	  q_144.push_back(0.1717);
+	  q_144.push_back(0.8994);
+
+	  p_coeff.insert(std::make_pair(F144, p_144));
+	  q_coeff.insert(std::make_pair(F144, q_144));
+
+	  // FM 145
+
+	  int F145 = 145;
+	  std::vector<float> p_145;
+	  p_145.push_back(0.7965);
+	  p_145.push_back(0.168);
+	  p_145.push_back(0.04058);
+
+	  std::vector<float> q_145;
+	  q_145.push_back(-1.156);
+	  q_145.push_back(0.08584);
+	  q_145.push_back(1.756);
+
+	  p_coeff.insert(std::make_pair(F145, p_145));
+	  q_coeff.insert(std::make_pair(F145, q_145));
+
+	  // FM 146
+
+	  int F146 = 146;
+	  std::vector<float> p_146;
+	  p_146.push_back(0.3421);
+	  p_146.push_back(0.07793);
+	  p_146.push_back(0.02181);
+
+	  std::vector<float> q_146;
+	  q_146.push_back(-1.558);
+	  q_146.push_back(0.0402);
+	  q_146.push_back(2.452);
+
+	  p_coeff.insert(std::make_pair(F146, p_146));
+	  q_coeff.insert(std::make_pair(F146, q_146));
+
+	  // FM 146
+
+	  int F147 = 147;
+	  std::vector<float> p_147;
+	  p_147.push_back(0.9702);
+	  p_147.push_back(0.1314);
+	  p_147.push_back(0.05167);
+
+	  std::vector<float> q_147;
+	  q_147.push_back(-1.118);
+	  q_147.push_back(0.0653);
+	  q_147.push_back(1.746);
+
+	  p_coeff.insert(std::make_pair(F147, p_147));
+	  q_coeff.insert(std::make_pair(F147, q_147));
+
+	  // FM 148
+
+	  int F148 = 148;
+	  std::vector<float> p_148;
+	  p_148.push_back(1.44);
+	  p_148.push_back(0.1175);
+	  p_148.push_back(0.07096);
+
+	  std::vector<float> q_148;
+	  q_148.push_back(-1.079);
+	  q_148.push_back(0.05247);
+	  q_148.push_back(1.652);
+
+	  p_coeff.insert(std::make_pair(F148, p_148));
+	  q_coeff.insert(std::make_pair(F148, q_148));
+
+	  // FM 149
+
+	  int F149 = 149;
+	  std::vector<float> p_149;
+	  p_149.push_back(0.4281);
+	  p_149.push_back(0.07778);
+	  p_149.push_back(0.02246);
+
+	  std::vector<float> q_149;
+	  q_149.push_back(-1.631);
+	  q_149.push_back(0.03661);
+	  q_149.push_back(2.479);
+
+	  p_coeff.insert(std::make_pair(F149, p_149));
+	  q_coeff.insert(std::make_pair(F149, q_149));
+
+	  // FM 161
+
+	  int F161 = 161;
+	  std::vector<float> p_161;
+	  p_161.push_back(1819);
+	  p_161.push_back(1.18);
+	  p_161.push_back(4.999);
+
+	  std::vector<float> q_161;
+	  q_161.push_back(-0.3084);
+	  q_161.push_back(6.721);
+	  q_161.push_back(0.3162);
+
+	  p_coeff.insert(std::make_pair(F161, p_161));
+	  q_coeff.insert(std::make_pair(F161, q_161));
+
+	  // FM 162
+
+	  int F162 = 162;
+	  std::vector<float> p_162;
+	  p_162.push_back(2.199);
+	  p_162.push_back(0.2162);
+	  p_162.push_back(0.07223);
+
+	  std::vector<float> q_162;
+	  q_162.push_back(-0.9267);
+	  q_162.push_back(0.09552);
+	  q_162.push_back(1.36);
+
+	  p_coeff.insert(std::make_pair(F162, p_162));
+	  q_coeff.insert(std::make_pair(F162, q_162));
+
+	  // FM 163
+
+	  int F163 = 163;
+	  std::vector<float> p_163;
+	  p_163.push_back(4.902);
+	  p_163.push_back(0.2927);
+	  p_163.push_back(0.1805);
+
+	  std::vector<float> q_163;
+	  q_163.push_back(-0.6625);
+	  q_163.push_back(0.1263);
+	  q_163.push_back(1.058);
+
+	  p_coeff.insert(std::make_pair(F163, p_163));
+	  q_coeff.insert(std::make_pair(F163, q_163));
+
+	  // FM 164
+
+	  int F164 = 164;
+	  std::vector<float> p_164;
+	  std::vector<float> q_164;
+	  p_164.push_back(0.);
+  	  p_164.push_back(0.);
+	  p_164.push_back(-1.);
+	  q_164.push_back(0.);
+	  q_164.push_back(0.);
+	  q_164.push_back(0.);
+	  p_coeff.insert(std::make_pair(F164, p_164));
+	  q_coeff.insert(std::make_pair(F164, q_164));
+
+	  // FM 165
+
+	  int F165 = 165;
+	  std::vector<float> p_165;
+	  p_165.push_back(0.817);
+	  p_165.push_back(0.07709);
+	  p_165.push_back(0.05013);
+
+	  std::vector<float> q_165;
+	  q_165.push_back(-1.425);
+	  q_165.push_back(0.03706);
+	  q_165.push_back(2.275);
+
+	  p_coeff.insert(std::make_pair(F165, p_165));
+	  q_coeff.insert(std::make_pair(F165, q_165));
+
+	  // FM 181
+
+	  int F181 = 181;
+	  std::vector<float> p_181;
+	  p_181.push_back(1804);
+	  p_181.push_back(1.178);
+	  p_181.push_back(4.999);
+
+	  std::vector<float> q_181;
+	  q_181.push_back(0.0);
+	  q_181.push_back(0.0);
+	  q_181.push_back(0.0);
+
+	  p_coeff.insert(std::make_pair(F181, p_181));
+	  q_coeff.insert(std::make_pair(F181, q_181));
+
+	  // FM 182
+
+	  int F182 = 182;
+	  std::vector<float> p_182;
+	  p_182.push_back(26.13);
+	  p_182.push_back(0.5009);
+	  p_182.push_back(2.488);
+
+	  std::vector<float> q_182;
+	  q_182.push_back(-0.1525);
+	  q_182.push_back(0.4025);
+	  q_182.push_back(0.4484);
+
+	  p_coeff.insert(std::make_pair(F182, p_182));
+	  q_coeff.insert(std::make_pair(F182, q_182));
+
+	  // FM 183
+
+	  int F183 = 183;
+	  std::vector<float> p_183;
+	  p_183.push_back(19.31);
+	  p_183.push_back(0.4546);
+	  p_183.push_back(1.428);
+
+	  std::vector<float> q_183;
+	  q_183.push_back(-0.2634);
+	  q_183.push_back(0.2268);
+	  q_183.push_back(0.55);
+
+	  p_coeff.insert(std::make_pair(F183, p_183));
+	  q_coeff.insert(std::make_pair(F183, q_183));
+
+	  // FM 185
+
+	  int F185 = 185;
+	  std::vector<float> p_185;
+	  p_185.push_back(5.518);
+	  p_185.push_back(0.2432);
+	  p_185.push_back(0.2307);
+
+	  std::vector<float> q_185;
+	  q_185.push_back(-0.6166);
+	  q_185.push_back(0.1085);
+	  q_185.push_back(1.011);
+
+	  p_coeff.insert(std::make_pair(F185, p_185));
+	  q_coeff.insert(std::make_pair(F185, q_185));
+
+	  // FM 186
+
+	  int F186 = 186;
+	  std::vector<float> p_186;
+	  p_186.push_back(2.956);
+	  p_186.push_back(0.1765);
+	  p_186.push_back(0.09361);
+
+	  std::vector<float> q_186;
+	  q_186.push_back(-0.8538);
+	  q_186.push_back(0.07918);
+	  q_186.push_back(1.292);
+
+	  p_coeff.insert(std::make_pair(F186, p_186));
+	  q_coeff.insert(std::make_pair(F186, q_186));
+
+	  // FM 188
+
+	  int F188 = 188;
+	  std::vector<float> p_188;
+	  p_188.push_back(1.736);
+	  p_188.push_back(0.1188);
+	  p_188.push_back(0.06593);
+
+	  std::vector<float> q_188;
+	  q_188.push_back(-1.076);
+	  q_188.push_back(0.04976);
+	  q_188.push_back(1.599);
+
+	  p_coeff.insert(std::make_pair(F188, p_188));
+	  q_coeff.insert(std::make_pair(F188, q_188));
+
+	  // FM 189
+
+	  int F189 = 189;
+	  std::vector<float> p_189;
+	  p_189.push_back(0.6251);
+	  p_189.push_back(0.07753);
+	  p_189.push_back(0.02607);
+
+	  std::vector<float> q_189;
+	  q_189.push_back(-1.505);
+	  q_189.push_back(0.03052);
+	  q_189.push_back(2.216);
+
+	  p_coeff.insert(std::make_pair(F189, p_189));
+	  q_coeff.insert(std::make_pair(F189, q_189));
+
+	}
+}
+
+
+float rate_of_spread(inputs *data, fuel_coefs *ptr, main_outs *at)
+   {
+   float p1, p2, p3, ws  ;
+   
+   p1 = p_coeff[data->nftype][0] ;
+   p2 = p_coeff[data->nftype][1] ;
+   p3 = p_coeff[data->nftype][2];
+   //se = slope_effect(inp) ;
+   ws = data->ws ;
+   at->rss = 1.0 / (p1 * exp(-p2 * ws) + p3) ;
+   
+   return at->rss * (at->rss >= 0) ;
+
    }
 
-void setup_const(fuel_coefs *ptr)
- {
-    //printf("dlw debug, enter fuel_coefs\n");
-/*   fuel type 0 */
-   strncpy(ptr->fueltype,"M1 ",3);
-   ptr->a=110.0; ptr->b=0.0282; ptr->c=1.5;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 1 */
-   ptr++;
-   strncpy(ptr->fueltype,"M2 ",3);
-   ptr->a=110.0; ptr->b=0.0282; ptr->c=1.5;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 2 */
-   ptr++;
-   strncpy(ptr->fueltype,"M3 ",3);
-   ptr->a=120.0; ptr->b=0.0572; ptr->c=1.4;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 3 */
-   ptr++;
-   strncpy(ptr->fueltype,"M4 ",3);
-   ptr->a=100.0; ptr->b=0.0404; ptr->c=1.48;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 4 */
-   ptr++;
-   strncpy(ptr->fueltype,"C1 ",3);
-   ptr->a=90.0; ptr->b=0.0649; ptr->c=4.5;
-   ptr->q=0.90; ptr->bui0=72; ptr->cbh=2; ptr->cfl=0.75;
- /*  fuel type 5 */
-   ptr++;
-   strncpy(ptr->fueltype,"C2 ",3);
-   ptr->a=110.0; ptr->b=0.0282; ptr->c=1.5;
-   ptr->q=0.70; ptr->bui0=64; ptr->cbh=3; ptr->cfl=0.80;
-/*   fuel type 6 */
-   ptr++;
-   strncpy(ptr->fueltype,"C3 ",3);
-   ptr->a=110.0; ptr->b=0.0444; ptr->c=3.0;
-   ptr->q=0.75; ptr->bui0=62; ptr->cbh=8; ptr->cfl=1.15;
-/*   fuel type 7 */
-   ptr++;
-   strncpy(ptr->fueltype,"C4 ",3);
-   ptr->a=110.0; ptr->b=0.0293; ptr->c=1.5;
-   ptr->q=0.80; ptr->bui0=66; ptr->cbh=4; ptr->cfl=1.20;
- /*  fuel type 8 */
-   ptr++;
-   strncpy(ptr->fueltype,"C5 ",3);
-   ptr->a=30.0; ptr->b=0.0697; ptr->c=4.0;
-   ptr->q=0.80; ptr->bui0=56; ptr->cbh=18; ptr->cfl=1.20;
- /*  fuel type 9 */
-   ptr++;
-   strncpy(ptr->fueltype,"C6 ",3);
-   ptr->a=30.0; ptr->b=0.0800; ptr->c=3.0;
-   ptr->q=0.80; ptr->bui0=62; ptr->cbh=7; ptr->cfl=1.80;
- /*  fuel type 10 */
-   ptr++;
-   strncpy(ptr->fueltype,"C7 ",3);
-   ptr->a=45.0; ptr->b=0.0305; ptr->c=2.0;
-   ptr->q=0.85; ptr->bui0=106; ptr->cbh=10; ptr->cfl=0.50;
- /*  fuel type 11 */
-   ptr++;
-   strncpy(ptr->fueltype,"D1 ",3);
-   ptr->a=30.0; ptr->b=0.0232; ptr->c=1.6;
-   ptr->q=0.90; ptr->bui0=32; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 12 */
-   ptr++;
-   strncpy(ptr->fueltype,"S1 ",3);
-   ptr->a=75.0; ptr->b=0.0297; ptr->c=1.3;
-   ptr->q=0.75; ptr->bui0=38; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 13 */
-   ptr++;
-   strncpy(ptr->fueltype,"S2 ",3);
-   ptr->a=40.0; ptr->b=0.0438; ptr->c=1.7;
-   ptr->q=0.75; ptr->bui0=63; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 14 */
-   ptr++;
-   strncpy(ptr->fueltype,"S3 ",3);
-   ptr->a=55.0; ptr->b=0.0829; ptr->c=3.2;
-   ptr->q=0.75; ptr->bui0=31; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 15 */
-   ptr++;
-   strncpy(ptr->fueltype,"O1a",3);
-   ptr->a=190.0; ptr->b=0.0310; ptr->c=1.40;
-   ptr->q=1.000; ptr->bui0=01; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 16 */
-   ptr++;
-   strncpy(ptr->fueltype,"O1b",3);
-   ptr->a=250.0; ptr->b=0.0350; ptr->c=1.7;
-   ptr->q=1.000; ptr->bui0=1; ptr->cbh=0; ptr->cfl=0.0;
-/*  fuel type 17 */
-   ptr++;
-   strncpy(ptr->fueltype,"D2 ",3);
-   ptr->a=6.0; ptr->b=0.0232; ptr->c=1.6;
-   ptr->q=0.90; ptr->bui0=32; ptr->cbh=0; ptr->cfl=0.0;
-
- }
-
- char get_fueltype_number(fuel_coefs **ptr,char fuel[4])
- {
-   int i;
-   char cover;
-   if(fuel[0]>='a' && fuel[0]<='z') fuel[0]+='A'-'a';
-   if(fuel[2]>='A' && fuel[2]<='Z') fuel[2]+='a'-'A';
-   for(i=0; i<numfuels && (strncmp((*ptr)->fueltype,fuel,3)!=0); i++)(*ptr)++;
-
-   if(i>=numfuels)
+float flankfire_ros(float ros,float bros,float lb)
    {
-    printf(" %s not a recognizable fuel type\n ",fuel);
-    exit(9);
+      return  ((ros + bros) / ( lb * 2.0)) ;
    }
-   if(fuel[0]=='C' || fuel[0]=='M')cover='c';
-   else cover='n';
 
-   return (cover);
- }
-
- float ffmc_effect(float ffmc)
- {
-   float mc,ff;
-   mc=147.2*(101.0-ffmc)/(59.5+ffmc);
-   ff=91.9*exp(-0.1386*mc)*(1+pow(mc,5.31)/49300000.0);
-   return (ff);
- }
-
- float rate_of_spread(inputs *inp, fuel_coefs *ptr, main_outs *at)
- {
-   float fw,isz,mult,*mu=&mult,rsi  ;
-   at->ff=ffmc_effect(inp->ffmc);
-   at->raz=inp->waz;
-   isz=0.208*at->ff;
-   if(inp->ps>0)at->wsv=slope_effect(inp,ptr,at,isz);
-   else at->wsv=inp->ws;
-   if(at->wsv<40.0)fw=exp(0.05039*at->wsv);
-   else fw=12.0*(1.0-exp(-0.0818*(at->wsv-28)));
-   at->isi=isz*fw;
-   rsi=ros_calc(inp,ptr,at->isi,mu);
-   at->rss=rsi*bui_effect(ptr,at,inp->bui);
-   return(at->rss);
- }
-
- float ros_calc(inputs *inp, fuel_coefs *ptr,float isi,float *mult)
- {
-   float ros;
-   if(strncmp(inp->fueltype,"O1",2)==0)
-                return ( grass(ptr, inp->cur ,isi,mult) );
-   if(strncmp(inp->fueltype,"M1",2)==0 || strncmp(inp->fueltype,"M2",2)==0)
-                return ( mixed_wood(ptr,isi,mult,inp->pc) );
-   if(strncmp(inp->fueltype,"M3",2)==0 || strncmp(inp->fueltype,"M4",2)==0)
-                return ( dead_fir(ptr,inp->pdf,isi,mult) );
-   if(strncmp(inp->fueltype,"D2",2)==0)
-                return ( D2_ROS(ptr,isi,inp->bui,mult) );
- /* if all else has fail its a conifer   */
-   return ( conifer(ptr,isi,mult));
- }
-
-
-  float grass(fuel_coefs *ptr,float cur,float isi,float *mult)
+/* ----------------- Length-to-Breadth --------------------------*/
+float l_to_b(float ws)
   {
-    float mu,ros;
-    if((float)(cur)>=58.8) mu=0.176 + 0.02*( (float)(cur) - 58.8 ) ;
-    else mu=0.005*(exp(0.061*(float)(cur) ) - 1.0) ;
-    ros=mu * (ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi)) , ptr->c));
-    if(mu<0.001)mu=0.001;  /* to have some value here*/
-    *mult=mu;
-    return(ros);
+    //if(strncmp(ft,"O1",2)==0)return( ws<1.0 ? 1.0 : (1.1*pow(ws,0.464)));
+    float alpha, beta, factor ;
+    alpha = 0.2566 ;
+    beta = -0.1548 ;
+    factor = 1000.0 / 3600.0;
+    return pow((0.936 * exp(alpha * factor * ws) + 0.461 * exp(beta * factor * ws) - 0.397), 0.45);
   }
 
-  float mixed_wood(fuel_coefs *ptr, float isi,float *mu, int pc)
+/* ----------------- Back Rate of Spread --------------------------*/
+float backfire_ros(main_outs *at, snd_outs *sec)
   {
-    float ros, mult,ros_d1,ros_c2;
-    int i;
-    *mu=pc/100.0;
-    ros_c2=ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi)), ptr->c);
-    if(strncmp(ptr->fueltype,"M2",2)==0) mult=0.2;
-    else mult=1.0;
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    if(i>=numfuels) { printf(" prob in mixedwood   d1 not found \n");exit(9);}
-    ros_d1=ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c);
+    float hb, bros, lb ;
+    //lb = l_to_b(data->fueltype,at->wsv) ;
+    lb = sec->lb ;
+    hb = (lb + sqrt(pow(lb,2) - 1.0)) /  (lb - sqrt(pow(lb, 2) - 1.0)) ;
 
-    ros=(pc/100.0)*ros_c2 + mult* (100-pc)/100.0*ros_d1;
-    return(ros);
+    bros = at->rss / hb ;
+    
+    return bros * (bros >= 0);
   }
 
-  float dead_fir(fuel_coefs *ptr, int pdf, float isi, float *mu)
-  {
-    double a,b,c;
-    int i;
-    float ros,rosm3or4_max,ros_d1, greenness=1.0;
-    if(strncmp(ptr->fueltype,"M4",2)==0)greenness=0.2;
-
-    rosm3or4_max=ptr->a*pow( ( 1.0-exp(-1.0*ptr->b*isi)),ptr->c);
-
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    if(i>=numfuels) { printf(" prob in mixedwood   d1 not found \n");exit(9);}
-    ros_d1=ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c);
-
-    ros=(float)(pdf)/100.0*rosm3or4_max + (100.0-(float)(pdf))/100.0*greenness*ros_d1;
-
-    *mu=(float)(pdf)/100.0;
-
-    return(ros);
-  }
-
-  float D2_ROS(fuel_coefs *ptr, float isi, float bui, float *mu)
-  {
-    *mu=1.0;
-    if(bui>=80) return( ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c) );
-    else return (0.0);
-  }
-
-  float conifer(fuel_coefs *ptr, float isi, float *mu)
-  {
-    *mu=1.0;
-    return( ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c) );
-  }
-
-  float bui_effect(fuel_coefs *ptr,main_outs *at, float bui)
-  {
-    float  bui_avg=50.0;
-
-    if(bui==0) bui=1.0;
-    at->be=exp(bui_avg*log(ptr->q)*( (1.0/bui)-(1.0/ptr->bui0) ) );
-    return (at->be);
-  }
-
-  float slope_effect(inputs *inp,fuel_coefs *ptr,main_outs *at, float isi )
-  /* ISI is ISZ really */
-  {
-    double isf,rsf,wse,ps,rsz,wsx,wsy,wsex,wsey,wsvx,wsvy,
-        wrad,srad,wsv,raz,check,wse2,wse1;
-    float mu=0.0;
-    ps=inp->ps*1.0;
-
-    if(ps>70.0)ps=70.0;   /* edited in version 4.6*/
-    at->sf=exp(3.533*pow(ps/100.0,1.2));
-    if(at->sf>10.0)at->sf=10.00;  /* added to ensure maximum is correct in version 4.6  */
-
-    if(strncmp(ptr->fueltype,"M1",2)==0 || strncmp(ptr->fueltype,"M2",2)==0)
-        isf=ISF_mixedwood(ptr,isi,inp->pc,at->sf);
-    else if(strncmp(ptr->fueltype,"M3",2)==0 || strncmp(ptr->fueltype,"M4",2)==0)
-        isf=ISF_deadfir(ptr,isi,inp->pdf,at->sf);
-    else{
-     rsz=ros_calc(inp,ptr,isi,&mu);
-     rsf=rsz*at->sf;
-
-     if(rsf>0.0)check=1.0-pow((rsf/(mu*ptr->a)),(1.0/ptr->c) );
-     else check=1.0;
-     if(check<slopelimit_isi)check=slopelimit_isi;
-
-     isf=(1.0/(-1.0*ptr->b))*log(check);
-    }
-    if(isf==0.0)isf=isi;  /* should this be 0.0001 really  */
-    wse1 = log(isf/(0.208*at->ff))/0.05039;
-    if(wse1<=40.0) wse=wse1;
-    else{
-      if(isf>(0.999*2.496*at->ff) ) isf=0.999*2.496*at->ff;
-      wse2=28.0-log(1.0-isf/(2.496*at->ff))/0.0818;
-      wse=wse2;
-    }
-    wrad=inp->waz/180.0*3.1415926;
-    wsx=inp->ws*sin(wrad);
-    wsy=inp->ws*cos(wrad);
-    srad=inp->saz/180.0*3.1415926;
-    wsex=wse*sin(srad);
-    wsey=wse*cos(srad);
-    wsvx=wsx+wsex;
-    wsvy=wsy+wsey;
-    wsv=sqrt(wsvx*wsvx+wsvy*wsvy);
-    raz=acos(wsvy/wsv);
-    raz=raz/3.1415926*180.0;
-    if(wsvx<0)raz=360-raz;
-    at->raz=raz;
-    return( (float)(wsv) );
-  }
-
- float ISF_mixedwood(fuel_coefs *ptr, float isz, int pc, float sf)
-  {
-    float check, mult,rsf_d1,rsf_c2,isf_d1,isf_c2;
-    int i;
-
-    rsf_c2=sf*ptr->a*pow( (1.0-exp(-1.0*ptr->b*isz)), ptr->c);
-    if(rsf_c2>0.0)check=1.0-pow((rsf_c2/(ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_c2=(1.0/(-1.0*ptr->b))*log(check);
-
-    if(strncmp(ptr->fueltype,"M2",2)==0) mult=0.2;
-    else mult=1.0;
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    rsf_d1=sf*(mult*ptr->a)*pow( (1.0-exp(-1.0*ptr->b*isz) ),ptr->c);
-
-    if(rsf_d1>0.0)check=1.0-pow((rsf_d1/(mult*ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_d1=(1.0/(-1.0*ptr->b))*log(check);
-
-    return  ( ((float)(pc)/100.0)*isf_c2 + (100-(float)(pc))/100.0*isf_d1  );
-  }
-
- float ISF_deadfir(fuel_coefs *ptr, float isz, int pdf, float sf)
-  {
-    float check, mult,rsf_d1,rsf_max,isf_d1,isf_max;
-    int i;
-
-    rsf_max=sf*ptr->a*pow( (1.0-exp(-1.0*ptr->b*isz)), ptr->c);
-    if(rsf_max>0.0)check=1.0-pow((rsf_max/(ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_max=(1.0/(-1.0*ptr->b))*log(check);
-
-    if(strncmp(ptr->fueltype,"M4",2)==0) mult=0.2;
-    else mult=1.0;
-
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    rsf_d1=sf*(mult*ptr->a)*pow( (1.0-exp(-1.0*ptr->b*isz) ),ptr->c);
-
-    if(rsf_d1>0.0)check=1.0-pow((rsf_d1/(mult*ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_d1=(1.0/(-1.0*ptr->b))*log(check);
-
-    return  ( ((float)(pdf)/100.0)*isf_max + ( 100.0-(float)(pdf) )/100.0*isf_d1  );
-  }
-
-
-  float fire_intensity (float fc,float ros)
-  {
-    return (300.0*fc*ros);
-  }
-
-  float foliar_moisture(inputs *inp, main_outs *at)
-  {
-    float latn;
-    int nd;
-    at->jd=inp->jd;
-    at->jd_min=inp->jd_min;
-    if(inp->jd_min<=0)
-     {
-       if(inp->elev<0)
-        {
-         latn=23.4*exp(-0.0360*(150-inp->lon))+46.0;
-         at->jd_min=(int)(0.5+151.0*inp->lat/latn);
-        }
-       else
-        {
-         latn=33.7*exp(-0.0351*(150-inp->lon))+43.0;
-         at->jd_min=(int)(0.5+142.1*inp->lat/latn+(0.0172*inp->elev));
-        }
-     }
-    nd=abs(inp->jd - at->jd_min);
-    if(nd>=50) return(120.0);
-    if(nd>=30 && nd<50) return (32.9+3.17*nd-0.0288*nd*nd);
-    return(85.0+0.0189*nd*nd);
-  }
-
-  float surf_fuel_consump(inputs *inp)
-  {
-    float sfc,ffc,wfc,bui,ffmc,sfc_c2,sfc_d1;
-    char ft[3];
-    strncpy(ft,inp->fueltype,2);
-    bui=inp->bui;
-    ffmc=inp->ffmc;
-    if(strncmp(ft,"C1",2)==0)
-     {
-/*       sfc=1.5*(1.0-exp(-0.23*(ffmc-81.0)));*/
-        if(ffmc>84) sfc=0.75+0.75*sqrt(1-exp(-0.23*(ffmc-84) ));
-        else  sfc=0.75-0.75*sqrt(1-exp(0.23*(ffmc-84) ) );
-       return (  sfc>=0 ? sfc: 0.0 );
-     }
-    if(strncmp(ft,"C2",2)==0 || strncmp(ft,"M3",2)==0 ||
-            strncmp(ft,"M4",2)==0)return ( 5.0*(1.0-exp(-0.0115*bui)) );
-    if(strncmp(ft,"C3",2)==0 || strncmp(ft,"C4",2)==0)
-        return( 5.0 * pow( (1.0-exp(-0.0164*bui)) , 2.24));
-    if(strncmp(ft,"C5",2)==0 || strncmp(ft,"C6",2)==0 )
-        return( 5.0* pow( (1.0-exp(-0.0149*bui)) , 2.48) );
-    if(strncmp(ft,"C7",2)==0)
-     {
-      ffc=2.0*(1.0-exp(-0.104*(ffmc-70.0)));
-      if(ffc<0) ffc=0.0;
-      wfc=1.5*(1.0-exp(-0.0201*bui));
-      return( ffc + wfc );
-     }
-    if(strncmp(ft,"O1",2)==0) return( (inp->gfl) /* change this*/ );
-    if(strncmp(ft,"M1",2)==0 || strncmp(ft,"M2",2)==0)
-     {
-      sfc_c2=5.0*(1.0-exp(-0.0115*bui));
-      sfc_d1=1.5*(1.0-exp(-0.0183*bui));
-      sfc=inp->pc/100.0*sfc_c2 + (100.0-inp->pc)/100.0*sfc_d1;
-      return(sfc);
-     }
-    if(strncmp(ft,"S1",2)==0)
-     {
-      ffc=4.0 * (1.0-exp(-0.025*bui));
-      wfc=4.0*(1.0-exp(-0.034*bui));
-      return ( ffc+wfc);
-     }
-    if(strncmp(ft,"S2",2)==0)
-     {
-      ffc=10.0*(1.0-exp(-0.013*bui));
-      wfc=6.0*(1.0-exp(-0.060*bui));
-      return (ffc+wfc);
-     }
-    if(strncmp(ft,"S3",2)==0)
-     {
-      ffc=12.0*(1.0-exp(-0.0166*bui));
-      wfc=20.0*(1.0-exp(-0.0210*bui));
-      return ( ffc+wfc);
-     }
-    if(strncmp(ft,"D1",2)==0) return ( 1.5*(1.0-exp(-0.0183*bui)));
-    if(strncmp(ft,"D2",2)==0) return ( bui>=80 ? 1.5*(1.0-exp(-0.0183*bui)) : 0.0);
-
-    printf("prob in sfc func \n");exit(9);
-    return(-99);
-  }
-
-
-  float crit_surf_intensity(fuel_coefs *ptr, float fmc)
-  {
-
-   return ( 0.001*pow(ptr->cbh*(460.0+25.9*fmc),1.5) );
-  }
-
-  float critical_ros(char ft[3],float sfc,float csi)
-  {
-      if(sfc>0)return ( csi/(300.0*sfc) );
-      else return(0.0);
-  }
-
-  float crown_frac_burn(float rss,float rso)
-  {
-   float cfb;
-   cfb=1.0-exp(-0.230*(rss-rso));
-   return (  cfb>0 ? cfb :0.0 );
-  }
-
-  char fire_type( float csi,float sfi)
-  {
-   return ( sfi>csi ? 'c' : 's' );
-  }
-
-  char fire_description(float cfb)
-  {
-    if(cfb<0.1)return('S');
-    if(cfb<0.9 && cfb>=0.1)return('I');
-    if(cfb>=0.9)return( 'C' );
-    return('*');
-  }
-
-  float final_ros(inputs *inp, float fmc,float isi,float cfb,float rss)
-  {
-    float rsc,ros;
-    if(strncmp(inp->fueltype,"C6",2)==0)
-    {
-     rsc=foliar_mois_effect(isi,fmc);
-     ros = rss+cfb*(rsc-rss);
-    }
-    else ros=rss;
-    return(ros);
-  }
-
-  float foliar_mois_effect(float isi,float fmc)
-  {
-    float fme,rsc, fme_avg = 0.778;
-    fme=1000.0*pow(1.5-0.00275*fmc,4.0)/(460.0 + 25.9*fmc);
-    rsc=60.0*(1.0-exp(-0.0497*isi))*fme/fme_avg;
-    return(rsc);
-  }
-
-  float crown_consump(inputs *inp, fuel_coefs *ptr,float cfb)
-  {
-   float cfc;
-   cfc=ptr->cfl*cfb;
-   if(strncmp(inp->fueltype,"M1",2)==0 || strncmp(inp->fueltype,"M2",2)==0)
-         cfc = inp->pc/100.0*cfc;
-   if(strncmp(inp->fueltype,"M3",2)==0 || strncmp(inp->fueltype,"M4",2)==0)
-         cfc = inp->pdf/100.0*cfc;
-   return(cfc);
-  }
-
-
-  float l_to_b(char ft[3],float ws)
-  {
-    if(strncmp(ft,"O1",2)==0)return( ws<1.0 ? 1.0 : (1.1*pow(ws,0.464)));
-    else  return (1.0 +8.729*pow(1.0-exp(-0.030*ws),2.155));
-  }
-
-  void set_all (fire_struc *ptr, int time)
-  {
-     ptr->time=0;
-     ptr->rost=ptr->ros;
-     ptr->dist=time*ptr->ros;
-  }
-  float backfire_isi(main_outs *at)
-  {
-    float bfw;
-    bfw = exp(-0.05039*at->wsv);
-    return ( 0.208*at->ff*bfw);
-  }
-
-  float backfire_ros(inputs *inp,fuel_coefs *ptr,main_outs *at,float bisi)
-  {
-    float mult=0.0,bros;
-    bros=ros_calc(inp,ptr,bisi,&mult);
-    bros *= bui_effect(ptr,at,inp->bui);
-    return(bros);
-  }
-
-  float area(float dt,float df)
-  {
-    float a,b;
-    a=dt/2.0;
-    b=df;
-    return ( a*b*3.1415926/10000.0);
-  }
-
-  float perimeter (fire_struc *h,fire_struc *b, snd_outs *sec, float lb)
-  {
-    float mult,p;
-    mult=3.1415926*(1.0+1.0/lb)*(1.0+pow(((lb-1.0)/(2.0*(lb+1.0))),2.0));
-    p=(h->dist + b->dist)/2.0*mult;
-    sec->pgr = (h->rost + b->rost)/2.0*mult;
-
-    return(p);
-  }
-
-  float acceleration(inputs *inp,float cfb)
-  {
-    int i;
-    char canopy='c',
-     open_list[10][3]={"O1","C1","S1","S2","S3","o1","c1","s1","s2","s3"};
-    for(i=0;strncmp(inp->fueltype,open_list[i],2)!=0 && i<10;i++);
-    if(i<10) canopy='o';
-    if(canopy=='o') return(0.115);
-    else return(0.115 -18.8*pow(cfb,2.5)*exp(-8.0*cfb) );
-  }
-
-  float flankfire_ros(float ros,float bros,float lb)
+float flame_length(inputs *data, fuel_coefs *ptr)
    {
-      return  ( (ros+bros)/(lb*2.0) );
+       float q1, q2, q3, fl, ws ;
+
+       ws = data->ws ;
+       q1 = q_coeff[data->nftype][0] ;
+       q2 = q_coeff[data->nftype][1] ;
+       q3 = q_coeff[data->nftype][2] ; 
+
+       fl = pow(q1 * exp(-q2 * ws) + q3, 2) ;
+       return fl; 
+   }
+
+float angleFL(inputs *data, fuel_coefs *ptr)
+   {
+       float angle, fl, y, ws ;
+       ws = data->ws ;
+       fl = flame_length(data, ptr) ;
+       y = 10.0 / 36.0 * ws ;
+
+       angle = atan(2.24 * sqrt(fl / pow(y, 2)))  ;
+       return angle;
+   }
+
+float flame_height(inputs *data, fuel_coefs *ptr)
+  {
+      float fh, phi ;
+      phi = angleFL(data, ptr) ;
+      fh = flame_length(data, ptr) * sin(phi) ;
+      return fh ;
+  }
+
+//bool fire_type_original(inputs *data, fuel_coefs *ptr)
+//  {
+//      float fh, cbh, dist ;
+//      bool crownFire = false ;
+//
+//      fh = flame_height(data, ptr) ;
+//      cbh = data->cbh ;
+//      dist = abs(cbh - fh) ;
+//	  //cout << "   dist (cbh - fh) = " << dist << "\n";
+//	  //cout << "   fh vs  cbh = " << fh << ", " << cbh << "\n";
+//	  
+//      if (((dist <= 1.0) || (fh >= cbh)) && (cbh > 0)) crownFire = true ;
+//      
+//      return crownFire ;
+//  }
+
+
+float byram_intensity(main_outs* at, fuel_coefs* ptr) {
+	float fl, ib;
+	fl = at->fl;
+	ib = 259.833 * pow(fl, 2.174);
+	ib=std::ceil(ib * 100.0) / 100.0;
+	return ib;
+}
+
+int fmc_scen(int scenario) {
+	int fmc;
+	if (scenario == 1) {
+		fmc = 60;
+	}
+	if (scenario == 2) {
+		fmc = 60;
+	}
+	if (scenario == 3) {
+		fmc = 120;
+	}
+	if (scenario == 4) {
+		fmc = 150;
+	}
+	return fmc;
+
+}
+
+bool fire_type(inputs* data, main_outs* at)
+{
+	float intensity, critical_intensity, cbh;
+	int fmc;
+	bool crownFire = false;
+
+	intensity = at->byram;
+	cbh = data->cbh;
+	fmc = fmc_scen(data->scen);
+	critical_intensity = pow((0.01 * cbh * (460 + 25.9 * fmc)), 1.5);
+
+	if ((intensity > critical_intensity) && cbh != 0) crownFire = true;
+
+	return crownFire;
+}
+
+
+float rate_of_spread10(inputs *data)
+   {
+   // FM 10 coef
+   float p1 = 0.2802, p2 = 0.07786, p3 = 0.01123 ;
+   float ros, ros10, ws, ffros, fcbd, fccf;
+
+   ffros = data->factor_ros10 ;
+   fcbd  = data->factor_cbd ;
+   fccf  = data->factor_ccf ;
+   
+   ws = data->ws ;
+   ros10 = 1. / (p1 * exp(-p2 * ws) + p3) ;
+   ros = ffros * ros10 + fccf * data->ccf + fcbd * data->factor_cbd ;
+   
+   return(ros);
+   }
+ 
+float backfire_ros10(fire_struc *hptr, snd_outs *sec)
+  {
+    float hb, bros, lb ;
+    lb = sec->lb ;
+    hb = (lb + sqrt(pow(lb, 2) - 1.0)) /  (lb - sqrt(pow(lb, 2) - 1.0)) ;
+
+    bros = hptr->ros / hb ;
+    
+    return bros;
+  }
+  
+ void calculate(inputs *data,  fuel_coefs * ptr, main_outs *at, snd_outs *sec, fire_struc *hptr, fire_struc *fptr,fire_struc *bptr)
+{
+    // Hack: Initialize coefficients 
+	initialize_coeff(data->scen);
+	
+	// Aux
+	float  ros, bros, lb, fros;
+	bool crownFire;
+    
+    // Populate fuel coefs struct
+	//ptr->fueltype = data->fueltype;
+	if (data->verbose){
+		std::cout  << "Populate fuel types " <<  std::endl;
+		std::cout  << "NfTypes:"  << data->nftype <<  std::endl;
+		std::cout  << "scen:"  << data->scen <<  std::endl;
+	}
+	ptr->p1 = p_coeff[data->nftype][0] ;
+    ptr->p2 = p_coeff[data->nftype][1] ;
+    ptr->p3 = p_coeff[data->nftype][2] ;
+    ptr->q1 = q_coeff[data->nftype][0] ;
+    ptr->q2 = q_coeff[data->nftype][1] ;
+    ptr->q3 = q_coeff[data->nftype][2] ;
+	ptr->nftype = data->nftype;
+	
+    // Step 1: Calculate HROS (surface)
+    at->rss = rate_of_spread(data, ptr, at);
+    hptr->rss = at->rss ;
+	
+    
+    // Step 2: Calculate Length-to-breadth
+    sec->lb = l_to_b(data->ws) ;
+    
+    // Step 3: Calculate BROS (surface)
+    bptr->rss = backfire_ros(at, sec) ;
+    
+    // Step 4: Calculate central FROS (surface)
+    fptr->rss = flankfire_ros(hptr->rss, bptr->rss, sec->lb);
+    
+    // Step 5: Ellipse components
+    at->a = (hptr->rss + bptr->rss) / 2. ;
+    at->b = (hptr->rss + bptr->rss) / (2. * sec->lb) ; 
+    at->c = (hptr->rss - bptr->rss) / 2. ; 
+    
+    // Step 6: Flame Length
+    at->fl = flame_length(data, ptr);
+    
+    // Step 7: Flame angle
+    at->angle = angleFL(data, ptr) ;
+    
+	// Step 8: Flame Height
+    at->fh = flame_height(data, ptr) ;
+    
+	// Step 9: Byram Intensity
+	at->byram = byram_intensity(at, ptr);
+
+	// Step 10: Criterion for Crown Fire Initiation (no init if user does not want to include it)
+	if (data->cros) {
+		crownFire = fire_type(data, at);
+		if (data->verbose) {
+			cout << "Checking crown Fire conditions " << crownFire << "\n";
+		}
+	}
+	else {
+		crownFire = false;
+	}
+
+    
+
+	// If we have Crown fire, update the ROSs
+    if (crownFire){
+            hptr->ros = rate_of_spread10(data) ;
+            bptr->ros = backfire_ros10(hptr,sec) ;
+            fptr->ros = flankfire_ros(hptr->ros, bptr->ros, sec->lb) ;
+            
+			if (data->verbose){
+				cout << "hptr->ros = " << hptr->ros << "\n" ;
+				cout << "bptr->ros = " << bptr->ros << "\n" ;
+				cout << "fptr->ros = " << fptr->ros << "\n" ;
+			}
+
+            at->a = (hptr->ros + bptr->ros) / 2. ;
+            at->b = (hptr->ros + bptr->ros) / (2. * sec->lb) ; 
+            at->c = (hptr->ros - bptr->ros) / 2 ; 
+			at->cros = true;
     }
+	
+	// Otherwise, use the surface alues
+    else{
+        hptr->ros = hptr->rss ;
+        bptr->ros = bptr->rss ; 
+        fptr->ros = fptr->rss ;
+		if (data->verbose){
+			cout << "hptr->ros = " << hptr->ros << "\n" ;
+			cout << "bptr->ros = " << bptr->ros << "\n" ;
+			cout << "fptr->ros = " << fptr->ros << "\n" ;
+		}
+    }
+	
+	if (data->verbose){
+		cout << "--------------- Inputs --------------- \n" ;
+		cout << "ws = " << data->ws << "\n" ;
+		cout << "coef data->cbh = " << data->cbh << "\n" ;
+		cout << "coef ptr->p1 = " << ptr->p1 << "\n" ;
+		cout << "coef ptr->p2 = " << ptr->p2 << "\n" ;
+		cout << "coef ptr->p3 = " << ptr->p3 << "\n" ;
+		cout << "coef ptr->q1 = " << ptr->q1 << "\n" ;
+		cout << "coef ptr->q2 = " << ptr->q2 << "\n" ;
+		cout << "coef ptr->q3 = " << ptr->q3 << "\n" ;
+		cout << "\n" ;
 
-  float flank_spread_distance(inputs *inp,fire_struc *ptr,snd_outs *sec,
-      float hrost,float brost,float hd, float bd,float lb,float a)
-  {
-    sec->lbt=(lb-1.0)*(1.0-exp(-a*inp->time)) +1.0;
-    ptr->rost=(hrost+brost)/(sec->lbt*2.0);
-    return ( (hd+bd)/(2.0*sec->lbt) );
-  }
+		cout << "---------------- Outputs --------------- \n" ;
+		cout << "at->rss = " << at->rss << "\n" ;
+		cout << "hptr->rss = " << hptr->rss << "\n" ;
+		cout << "lb = " << sec->lb << "\n" ;
+		cout << "bptr->rss = " << bptr->rss << "\n" ;
+		cout << "fptr->rss = " << fptr->rss << "\n" ;
+		cout << "axis a = " << at->a << "\n" ;
+		cout << "axis b = " << at->b << "\n" ;
+		cout << "axis c = " << at->c << "\n" ;
+		cout << "fl = " << at->fl << "\n";
+		cout << "angle = " << at->angle << "\n";
+		cout << "fh = " << at->fh << "\n";
+		cout << "Crown Fire = " << crownFire << "\n";
+	}
+}
 
-  float spread_distance(inputs *inp,fire_struc *ptr,float a)
-  {
-    ptr->rost= ptr->ros*(1.0-exp(-a*inp->time));
-    return ( ptr->ros*(inp->time+(exp(-a*inp->time)/a)-1.0/a));
-  }
+void determine_destiny_metrics(inputs* data, fuel_coefs* ptr, main_outs* metrics) {
+	// Hack: Initialize coefficients 
+	initialize_coeff(data->scen);
 
-  int time_to_crown(float ros,float rso,float a)
-  {
-    float ratio;
-    if(ros>0)ratio= rso/ros; 
-    else ratio=1.1;
-    if(ratio>0.9 && ratio<=1.0 )ratio=0.9;
-    if(ratio<1.0)return (int)(log(1.0-ratio)/-a);
-    else return(99);
-  }
+	// Aux
+	float  ros, bros, lb, fros;
+	bool crownFire = false;
 
-  float fire_behaviour(inputs *inp,fuel_coefs *ptr,main_outs *at,
-                             fire_struc *f)
-  {
-    float sfi,fi;
-    char firetype;
-    sfi=fire_intensity(at->sfc,f->rss);
-    firetype=fire_type(at->csi,sfi);
-    if(firetype=='c')
-     {
-       f->cfb = crown_frac_burn(f->rss,at->rso);
-       f->fd = fire_description(f->cfb);
-       f->ros = final_ros(inp,at->fmc,f->isi,f->cfb,f->rss);
-       f->cfc = crown_consump(inp,ptr,f->cfb);
-       f->fc = f->cfc + at->sfc;
-       fi = fire_intensity(f->fc,f->ros);
-     }
-    if(firetype!='c' || at->covertype=='n')
-     {
-       f->fc = at->sfc;
-       fi = sfi;
-       f->cfb=0.0;
-       f->fd='S';
-       f->ros=f->rss;
-     }
-    return(fi);
-  }
+	ptr->q1 = q_coeff[data->nftype][0];
+	ptr->q2 = q_coeff[data->nftype][1];
+	ptr->q3 = q_coeff[data->nftype][2];
+	ptr->nftype = data->nftype;
+	// Step 6: Flame Length
+	metrics->fl = flame_length(data, ptr);
+	// Step 9: Byram Intensity
+	metrics->byram = byram_intensity(metrics, ptr);
 
-  float flank_fire_behaviour(inputs *inp,fuel_coefs *ptr,main_outs *at,
-                             fire_struc *f)
-  {
-    float sfi,fi;
-    char firetype;
-    sfi=fire_intensity(at->sfc,f->rss);
-    firetype=fire_type(at->csi,sfi);
-    if(firetype=='c')
-     {
-       f->cfb = crown_frac_burn(f->rss,at->rso);
-       f->fd = fire_description(f->cfb);
-       f->cfc = crown_consump(inp,ptr,f->cfb);
-       f->fc = f->cfc + at->sfc;
-       fi = fire_intensity(f->fc,f->ros);
-     }
-    if(firetype!='c' || at->covertype=='n')
-     {
-       f->fc = at->sfc;
-       fi = sfi;
-       f->cfb=0.0;
-       f->fd='S';
-    /*   f->ros=f->rss;  removed...v4.5   should not have been here ros set in flankfire_ros()  */
-     }
-    return(fi);
-  }
+	// Step 10: Criterion for Crown Fire Initiation (no init if user does not want to include it)
+	if (data->cros) {
+		crownFire = fire_type(data, metrics);
+		if (data->verbose) {
+			cout << "Checking crown Fire conditions " << crownFire << "\n";
+		}
+	}
+	else {
+		crownFire = false;
+	}
 
-
-  void zero_main(main_outs *m)
-  {
-    //printf("dlw debug, enter zero_main\n");
-    m->sfc=0.0;
-    //printf("dlw debug, completed sfc zero assign\n");
-    m->csi=0.0;m->rso=0.0;m->fmc=0;m->sfi=0.0;
-    m->rss=0.0;m->isi=0.0;m->be=0.0;m->sf=1.0;m->raz=0.0;m->wsv=0.0;
-    m->ff=0.0; m->jd=0;m->jd_min=0;
-    m->covertype=' ';
-  }
-
-  void zero_sec (snd_outs *s)
-  {
-    //printf("dlw debug, enter zero_sec\n");
-    //printf("dlw debug, trying s->lb=%f\n",s->lb);
-    s->lb=0.0;
-    //printf("dlw debug, completed s->lb=0.0\n"); 
-    s->area=0.0;
-    //printf("dlw debug, completed s->area=0.0\n"); 
-    s->perm=0.0;
-    //printf("dlw debug, completed s->perm=0.0\n"); 
-    s->pgr=0.0;
-    //printf("dlw debug, completed s->pgr=0.0\n"); 
-  }
-
-  void zero_fire (fire_struc *a)
-  {
-    //printf("dlw debug, enter zero_fire\n");
-    //printf("try before assign a->ros=%f\n", a->ros);
-    a->ros=0.0;
-    //printf("dlw debug, did a->ros\n"); 
-    a->dist=0.0;a->rost=0.0;a->cfb=0.0;a->fi=0.0;
-    //printf("dlw debug, did a->fi\n"); 
-    a->fc=0.0;a->cfc=0.0;a->time=0.0;
-    //printf("dlw debug, did a->time\n"); 
-  }
+	metrics->cros = crownFire;
+}
