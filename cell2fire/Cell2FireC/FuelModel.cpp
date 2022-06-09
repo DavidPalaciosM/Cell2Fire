@@ -1,816 +1,775 @@
-/*   Subroutine of  FBP.C   version 4.4   Aug,2007
-         Canadian Forest Fire Behaviour Prediction System
-This code is copyright of the Canadian Forest Service, Natural Resources Canada (1992-2005)
-It is provide free of charge to anyone who wishes to incorporate it within their 
-forest fire management applications, however users should note in their application that
-the FBP calucaltions come from the Canadianf Forest Services Fire Behaviour Prediction
-System. The Canadian Forest Service has gone through considerable testing to ensure that
-these computer functions duplicate the system as laid out in ST-X-3 (The Development
-and Structure of the Canadian Forest Fire Behaviour Prediction System (1992)) and the subsequent corrections and additions to the system (the draft "FBP Note"), however no
-guarentte is given as to the absolute accuracy of the code.
-  This file contains a series of functions that go thru all the
-  FBP System calculations.
-Originally  Written at P.N.F.I.  December 91, by Mike Wotton
- Corrections to version  1.0
-   1.01  -  b value in O1b was wrong.   KA at nofc (mar5,92) ...bmw
-   1.01a  - no error just added upper and lowercase fueltype entry ...bmw
-   1.02   - l_to_b problem with inequalitiy...minor prob fixed
-   1.5  - modifications to stop small(improbable) numbers from blowing
-          up the slope calculation stuff
-          this caused a slope problem which BA @ PFC pointed out
-                may 93.......bmw
-   3.0  jan /96   bmw
-        -  c6  - constant sfc
-      3.01  apr/97
-        - add line to recognize uppercase in grass fuels
-      3.02  apr/97
-        - change accn funtion to recognize lower case fuels for open
-      3.1  jul/97
-        - change slope function to stop overflow when cur<=50 in O1
-      3.2 sept/97
-        - change the c6 calc of flank ros to avoid variation in l/b with
-           RSC calculation in flank.
-      3.3 jan/98
-        - error was SFC >0  if CUR<50 (and hence ROS=0)
-          changed this within the surf_fuel_consump() fn
-      3.4 apr/98  (ya i know the dates aren't in sequence)
-         - change O1a  A value from 1.41 to 1.4  from KA apr/98
-         
-      4.0 jan/98
-         - changes listed within the FBP note and TEST dataset 
-        4.1  - August 2004
-          - final changes in the FBP note (new M-3/M-4 model) and a new grass CF model
-        -removed some verstigaes of older functions for input /output
-        4.2 - Oct 2004
-        - changes as a result of discussion with Prometheus team
-         -  SFC in grass ...4.1 did not include changes to grass consumption though
-            spread at values of CUR<50% are now possible (see point 3.3 above)
-        - at  very short time periods using acceleration a CFB(t) should be caluclated
-            and used for final ROS in the C-6 model. 
-       4.3 - August 2005
-        - changes as a result of further discussions with Prometheus team. These were:
-        - changes to include the alternate ISI calculation formula (53a footnote 2) in 
-                the calculation of WSE  (...added as a section to The FBP Note)
-        - addition of D-2 for the promtheus team to evaluate their model
-          ( D-2 is leafed out pure aspen
-            ROS(D-2)= 0.2 * ROS(D-1) if BUI>80  otherwise ROS(D-2)=0)
-        - NOTE that this (D-2) is not an official part of the FBP System however.
-        4.4  August 2007
-         - crown consump in m3/m4. It was calcuating based full conifer content.
-                but should be modifed by PDF
-         - change to match changes in FBP Note section 3.3 (eqn 66c)
-        4.5 Nov 2007
-          - perimeter calc wasn't based on LB(t).
-          - Flankfire final ROS (FROS) could be set to FRSS if flank fire did not
-             involve crowning 
-          - change to function headers in perimeter() and  flank_spread_distance()
-                to accomodate LB(t) assignment
-          - LB(t) is now added to the secondary inputs structure and kept
-                it is asdsigned in  flank_spread_distance().
-        4.6 jan 2009
-          - uping the slope limit to 70%...and so the default after that is 10.0
-        5.0  Oct 2014
-            - PGR is corrected to be a function of ROS(t) not equilibrium ROS  
-        5.0001  June 2015
-            - forgot to change the encoded version number to 5.0.  now 5.0001
-            - updated header to FBP5.h
+#include "FuelModel.h"
+
+#include <iostream>
+#include <math.h>
+#include <cmath>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <string.h>
+#include <unordered_map>
+#include <string>
+#include <vector>
+
+using namespace std;
+
+/*
+	Global coefficients
+*/  
+std::unordered_map<int, std::vector<float>> fmcs;
+std::unordered_map<int, std::vector<float>> cbhs;
+std::unordered_map<int, std::vector<float>> fls;
+std::unordered_map<int, std::vector<float>> hs;
+
+ 
+/*
+	Functions
 */
 
-#include "FuelModel.h"
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
-
-  char version[50]="Last modified June 2015,  by BMW ",
-       ver[17] = "Version 5.0001  ";
-
-  float slopelimit_isi=0.01, numfuels=18;
-
-  void calculate(inputs *data,fuel_coefs *pt,main_outs *at,
-      snd_outs *sec,fire_struc *hptr,fire_struc *fptr,fire_struc *bptr)
-  {
-    char firetype;
-    float accn;
-    fuel_coefs **ptr=&pt;
-    zero_main(at);
-    zero_sec(sec);
-    zero_fire(hptr);
-    zero_fire(fptr);
-    zero_fire(bptr);
-    at->covertype=get_fueltype_number(ptr,data->fueltype);
-    at->ff=ffmc_effect(data->ffmc);
-    at->rss=rate_of_spread(data,(*ptr),at);
-    hptr->rss=at->rss;
-    at->sfc=surf_fuel_consump(data);
-    at->sfi=fire_intensity(at->sfc,at->rss);
-
-
-    if(at->covertype=='c')
-     {
-       at->fmc=foliar_moisture(data,at);
-       at->csi=crit_surf_intensity((*ptr),at->fmc);
-       at->rso=critical_ros(data->fueltype,at->sfc,at->csi);
-       firetype=fire_type(at->csi,at->sfi);
-
-
-       if(firetype=='c')
-        {
-         hptr->cfb=crown_frac_burn(at->rss,at->rso);
-         hptr->fd=fire_description(hptr->cfb);
-         hptr->ros=final_ros(data,at->fmc,at->isi,hptr->cfb,at->rss);
-         hptr->cfc=crown_consump(data,(*ptr),hptr->cfb);
-         hptr->fc=hptr->cfc+at->sfc;
-         hptr->fi=fire_intensity(hptr->fc,hptr->ros);
-        }
-     }
-    if(at->covertype=='n' || firetype=='s')
-     {
-      hptr->fd='S';
-      hptr->ros=at->rss;
-      hptr->fc=at->sfc;
-      hptr->fi=at->sfi;
-      hptr->cfb=0.0;
-     }
-    sec->lb=l_to_b(data->fueltype,at->wsv);
-    bptr->isi=backfire_isi(at);
-    bptr->rss=backfire_ros(data,(*ptr),at,bptr->isi);
-    fptr->rss=flankfire_ros(hptr->rss,bptr->rss,sec->lb);
-    bptr->fi=fire_behaviour(data,(*ptr),at,bptr);
-    fptr->ros=flankfire_ros(hptr->ros,bptr->ros,sec->lb );
-    fptr->fi=flank_fire_behaviour(data,(*ptr),at,fptr);
-
-    if(data->pattern==1 && data->time>0)
-      {
-        accn=acceleration(data,hptr->cfb);
-        hptr->dist=spread_distance(data,hptr,accn);
-        bptr->dist=spread_distance(data,bptr,accn);
-        fptr->dist=flank_spread_distance(data,fptr,sec,hptr->rost,bptr->rost,
-            hptr->dist,bptr->dist,sec->lb,accn);
-        hptr->time=time_to_crown(hptr->ros,at->rso,accn);
-        fptr->time=time_to_crown(fptr->ros,at->rso,accn);
-        bptr->time=time_to_crown(bptr->ros,at->rso,accn);
-      }
-    else
-      {
-        set_all(hptr,data->time);
-        set_all(fptr,data->time);
-        set_all(bptr,data->time);
-      }
-    sec->area=area((hptr->dist+bptr->dist),fptr->dist);
-    if(data->pattern==1 && data->time>0) sec->perm=perimeter(hptr,bptr,sec,sec->lbt);
-    else sec->perm=perimeter(hptr,bptr,sec,sec->lb);
-   }
-
-void setup_const(fuel_coefs *ptr)
- {
+void setup_const()
+{
     //printf("dlw debug, enter fuel_coefs\n");
-/*   fuel type 0 */
-   strncpy(ptr->fueltype,"M1 ",3);
-   ptr->a=110.0; ptr->b=0.0282; ptr->c=1.5;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 1 */
-   ptr++;
-   strncpy(ptr->fueltype,"M2 ",3);
-   ptr->a=110.0; ptr->b=0.0282; ptr->c=1.5;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 2 */
-   ptr++;
-   strncpy(ptr->fueltype,"M3 ",3);
-   ptr->a=120.0; ptr->b=0.0572; ptr->c=1.4;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 3 */
-   ptr++;
-   strncpy(ptr->fueltype,"M4 ",3);
-   ptr->a=100.0; ptr->b=0.0404; ptr->c=1.48;
-   ptr->q=0.80; ptr->bui0=50; ptr->cbh=6; ptr->cfl=0.80;
-/*   fuel type 4 */
-   ptr++;
-   strncpy(ptr->fueltype,"C1 ",3);
-   ptr->a=90.0; ptr->b=0.0649; ptr->c=4.5;
-   ptr->q=0.90; ptr->bui0=72; ptr->cbh=2; ptr->cfl=0.75;
- /*  fuel type 5 */
-   ptr++;
-   strncpy(ptr->fueltype,"C2 ",3);
-   ptr->a=110.0; ptr->b=0.0282; ptr->c=1.5;
-   ptr->q=0.70; ptr->bui0=64; ptr->cbh=3; ptr->cfl=0.80;
-/*   fuel type 6 */
-   ptr++;
-   strncpy(ptr->fueltype,"C3 ",3);
-   ptr->a=110.0; ptr->b=0.0444; ptr->c=3.0;
-   ptr->q=0.75; ptr->bui0=62; ptr->cbh=8; ptr->cfl=1.15;
-/*   fuel type 7 */
-   ptr++;
-   strncpy(ptr->fueltype,"C4 ",3);
-   ptr->a=110.0; ptr->b=0.0293; ptr->c=1.5;
-   ptr->q=0.80; ptr->bui0=66; ptr->cbh=4; ptr->cfl=1.20;
- /*  fuel type 8 */
-   ptr++;
-   strncpy(ptr->fueltype,"C5 ",3);
-   ptr->a=30.0; ptr->b=0.0697; ptr->c=4.0;
-   ptr->q=0.80; ptr->bui0=56; ptr->cbh=18; ptr->cfl=1.20;
- /*  fuel type 9 */
-   ptr++;
-   strncpy(ptr->fueltype,"C6 ",3);
-   ptr->a=30.0; ptr->b=0.0800; ptr->c=3.0;
-   ptr->q=0.80; ptr->bui0=62; ptr->cbh=7; ptr->cfl=1.80;
- /*  fuel type 10 */
-   ptr++;
-   strncpy(ptr->fueltype,"C7 ",3);
-   ptr->a=45.0; ptr->b=0.0305; ptr->c=2.0;
-   ptr->q=0.85; ptr->bui0=106; ptr->cbh=10; ptr->cfl=0.50;
- /*  fuel type 11 */
-   ptr++;
-   strncpy(ptr->fueltype,"D1 ",3);
-   ptr->a=30.0; ptr->b=0.0232; ptr->c=1.6;
-   ptr->q=0.90; ptr->bui0=32; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 12 */
-   ptr++;
-   strncpy(ptr->fueltype,"S1 ",3);
-   ptr->a=75.0; ptr->b=0.0297; ptr->c=1.3;
-   ptr->q=0.75; ptr->bui0=38; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 13 */
-   ptr++;
-   strncpy(ptr->fueltype,"S2 ",3);
-   ptr->a=40.0; ptr->b=0.0438; ptr->c=1.7;
-   ptr->q=0.75; ptr->bui0=63; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 14 */
-   ptr++;
-   strncpy(ptr->fueltype,"S3 ",3);
-   ptr->a=55.0; ptr->b=0.0829; ptr->c=3.2;
-   ptr->q=0.75; ptr->bui0=31; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 15 */
-   ptr++;
-   strncpy(ptr->fueltype,"O1a",3);
-   ptr->a=190.0; ptr->b=0.0310; ptr->c=1.40;
-   ptr->q=1.000; ptr->bui0=01; ptr->cbh=0; ptr->cfl=0.0;
- /*  fuel type 16 */
-   ptr++;
-   strncpy(ptr->fueltype,"O1b",3);
-   ptr->a=250.0; ptr->b=0.0350; ptr->c=1.7;
-   ptr->q=1.000; ptr->bui0=1; ptr->cbh=0; ptr->cfl=0.0;
-/*  fuel type 17 */
-   ptr++;
-   strncpy(ptr->fueltype,"D2 ",3);
-   ptr->a=6.0; ptr->b=0.0232; ptr->c=1.6;
-   ptr->q=0.90; ptr->bui0=32; ptr->cbh=0; ptr->cfl=0.0;
+    /*   fuel type 1 */
+    int PCH1 = 1;
+    std::vector<float> fmc_pch1;
+    std::vector<float> cbh_pch1;
+    std::vector<float> fl_pch1;
+    std::vector<float> h_pch1;
+    fmc_pch1.push_back(0.018880);
+    cbh_pch1.push_back(0.0282);
+    fl_pch1.push_back(0.918);
+    h_pch1.push_back(3328);
+    fmcs.insert(std::make_pair(PCH1, fmc_pch1));
+    cbhs.insert(std::make_pair(PCH1, cbh_pch1));
+    fls.insert(std::make_pair(PCH1, fl_pch1));
+    hs.insert(std::make_pair(PCH1, h_pch1));
 
- }
+    int PCH2 = 2;
+    std::vector<float> fmc_pch2;
+    std::vector<float> cbh_pch2;
+    std::vector<float> fl_pch2;
+    std::vector<float> h_pch2;
+    fmc_pch2.push_back(0.016027);
+    cbh_pch2.push_back(0.0282);
+    fl_pch2.push_back(0.617);
+    h_pch2.push_back(3928);
+    fmcs.insert(std::make_pair(PCH2, fmc_pch2));
+    cbhs.insert(std::make_pair(PCH2, cbh_pch2));
+    fls.insert(std::make_pair(PCH2, fl_pch2));
+    hs.insert(std::make_pair(PCH2, h_pch2));
 
- char get_fueltype_number(fuel_coefs **ptr,char fuel[4])
- {
-   int i;
-   char cover;
-   if(fuel[0]>='a' && fuel[0]<='z') fuel[0]+='A'-'a';
-   if(fuel[2]>='A' && fuel[2]<='Z') fuel[2]+='a'-'A';
-   for(i=0; i<numfuels && (strncmp((*ptr)->fueltype,fuel,3)!=0); i++)(*ptr)++;
+    int PCH3 = 3;
+    std::vector<float> fmc_pch3;
+    std::vector<float> cbh_pch3;
+    std::vector<float> fl_pch3;
+    std::vector<float> h_pch3;
+    fmc_pch3.push_back(0.010235);
+    cbh_pch3.push_back(0.0282);
+    fl_pch3.push_back(0.684);
+    h_pch3.push_back(3928);
+    fmcs.insert(std::make_pair(PCH3, fmc_pch3));
+    cbhs.insert(std::make_pair(PCH3, cbh_pch3));
+    fls.insert(std::make_pair(PCH3, fl_pch3));
+    hs.insert(std::make_pair(PCH3, h_pch3));
 
-   if(i>=numfuels)
+    int PCH4 = 4;
+    std::vector<float> fmc_pch4;
+    std::vector<float> cbh_pch4;
+    std::vector<float> fl_pch4;
+    std::vector<float> h_pch4;
+    fmc_pch4.push_back(0.008690);
+    cbh_pch4.push_back(0.0282);
+    fl_pch4.push_back(0.527);
+    h_pch4.push_back(3928);
+    fmcs.insert(std::make_pair(PCH4, fmc_pch4));
+    cbhs.insert(std::make_pair(PCH4, cbh_pch4));
+    fls.insert(std::make_pair(PCH4, fl_pch4));
+    hs.insert(std::make_pair(PCH4, h_pch4));
+
+    int PCH5 = 5;
+    std::vector<float> fmc_pch5;
+    std::vector<float> cbh_pch5;
+    std::vector<float> fl_pch5;
+    std::vector<float> h_pch5;
+    fmc_pch5.push_back(0.001009);
+    cbh_pch5.push_back(0.0282);
+    fl_pch5.push_back(0.649);
+    h_pch5.push_back(3800);
+    fmcs.insert(std::make_pair(PCH5, fmc_pch5));
+    cbhs.insert(std::make_pair(PCH5, cbh_pch5));
+    fls.insert(std::make_pair(PCH5, fl_pch5));
+    hs.insert(std::make_pair(PCH5, h_pch5));
+
+    int MT01 = 6;
+    std::vector<float> fmc_mt01;
+    std::vector<float> cbh_mt01;
+    std::vector<float> fl_mt01;
+    std::vector<float> h_mt01;
+    fmc_mt01.push_back(0.007603);
+    cbh_mt01.push_back(0.0282);
+    fl_mt01.push_back(2.923);
+    h_mt01.push_back(4693);
+    fmcs.insert(std::make_pair(MT01, fmc_mt01));
+    cbhs.insert(std::make_pair(MT01, cbh_mt01));
+    fls.insert(std::make_pair(MT01, fl_mt01));
+    hs.insert(std::make_pair(MT01, h_mt01));
+
+    int MT02 = 7;
+    std::vector<float> fmc_mt02;
+    std::vector<float> cbh_mt02;
+    std::vector<float> fl_mt02;
+    std::vector<float> h_mt02;
+    fmc_mt02.push_back(0.008147);
+    cbh_mt02.push_back(0.0282);
+    fl_mt02.push_back(1.910);
+    h_mt02.push_back(4693);
+    fmcs.insert(std::make_pair(MT02, fmc_mt02));
+    cbhs.insert(std::make_pair(MT02, cbh_mt02));
+    fls.insert(std::make_pair(MT02, fl_mt02));
+    hs.insert(std::make_pair(MT02, h_mt02));
+
+    int MT03 = 8;
+    std::vector<float> fmc_mt03;
+    std::vector<float> cbh_mt03;
+    std::vector<float> fl_mt03;
+    std::vector<float> h_mt03;
+    fmc_mt03.push_back(0.001672);
+    cbh_mt03.push_back(0.0282);
+    fl_mt03.push_back(3.308);
+    h_mt03.push_back(4572);
+    fmcs.insert(std::make_pair(MT03, fmc_mt03));
+    cbhs.insert(std::make_pair(MT03, cbh_mt03));
+    fls.insert(std::make_pair(MT03, fl_mt03));
+    hs.insert(std::make_pair(MT03, h_mt03));
+
+    int MT04 = 9;
+    std::vector<float> fmc_mt04;
+    std::vector<float> cbh_mt04;
+    std::vector<float> fl_mt04;
+    std::vector<float> h_mt04;
+    fmc_mt04.push_back(0.004886);
+    cbh_mt04.push_back(0.0282);
+    fl_mt04.push_back(1.383);
+    h_mt04.push_back(4572);
+    fmcs.insert(std::make_pair(MT04, fmc_mt04));
+    cbhs.insert(std::make_pair(MT04, cbh_mt04));
+    fls.insert(std::make_pair(MT04, fl_mt04));
+    hs.insert(std::make_pair(MT04, h_mt04));
+
+    int MT05 = 10;
+    std::vector<float> fmc_mt05;
+    std::vector<float> cbh_mt05;
+    std::vector<float> fl_mt05;
+    std::vector<float> h_mt05;
+    fmc_mt05.push_back(0.010321);
+    cbh_mt05.push_back(0.0282);
+    fl_mt05.push_back(3.029);
+    h_mt05.push_back(5000);
+    fmcs.insert(std::make_pair(MT05, fmc_mt05));
+    cbhs.insert(std::make_pair(MT05, cbh_mt05));
+    fls.insert(std::make_pair(MT05, fl_mt05));
+    hs.insert(std::make_pair(MT05, h_mt05));
+    
+    int MT06 = 11;
+    std::vector<float> fmc_mt06;
+    std::vector<float> cbh_mt06;
+    std::vector<float> fl_mt06;
+    std::vector<float> h_mt06;
+    fmc_mt06.push_back(0.009234);
+    cbh_mt06.push_back(0.0282);
+    fl_mt06.push_back(3.529);
+    h_mt06.push_back(5087);
+    fmcs.insert(std::make_pair(MT06, fmc_mt06));
+    cbhs.insert(std::make_pair(MT06, cbh_mt06));
+    fls.insert(std::make_pair(MT06, fl_mt06));
+    hs.insert(std::make_pair(MT06, h_mt06));
+
+    int MT07 = 12;
+    std::vector<float> fmc_mt07;
+    std::vector<float> cbh_mt07;
+    std::vector<float> fl_mt07;
+    std::vector<float> h_mt07;
+    fmc_mt07.push_back(0.001787);
+    cbh_mt07.push_back(0.0282);
+    fl_mt07.push_back(3.189);
+    h_mt07.push_back(4500);
+    fmcs.insert(std::make_pair(MT07, fmc_mt07));
+    cbhs.insert(std::make_pair(MT07, cbh_mt07));
+    fls.insert(std::make_pair(MT07, fl_mt07));
+    hs.insert(std::make_pair(MT07, h_mt07));
+
+    int MT08 = 13;
+    std::vector<float> fmc_mt08;
+    std::vector<float> cbh_mt08;
+    std::vector<float> fl_mt08;
+    std::vector<float> h_mt08;
+    fmc_mt08.push_back(0.004342);
+    cbh_mt08.push_back(0.0282);
+    fl_mt08.push_back(1.903);
+    h_mt08.push_back(4500);
+    fmcs.insert(std::make_pair(MT08, fmc_mt08));
+    cbhs.insert(std::make_pair(MT08, cbh_mt08));
+    fls.insert(std::make_pair(MT08, fl_mt08));
+    hs.insert(std::make_pair(MT08, h_mt08));
+
+    int BN01 = 14;
+    std::vector<float> fmc_bn01;
+    std::vector<float> cbh_bn01;
+    std::vector<float> fl_bn01;
+    std::vector<float> h_bn01;
+    fmc_bn01.push_back(0.002249);
+    cbh_bn01.push_back(0.0282);
+    fl_bn01.push_back(2.624);
+    h_bn01.push_back(4600);
+    fmcs.insert(std::make_pair(BN01, fmc_bn01));
+    cbhs.insert(std::make_pair(BN01, cbh_bn01));
+    fls.insert(std::make_pair(BN01, fl_bn01));
+    hs.insert(std::make_pair(BN01, h_bn01));
+
+    int BN02 = 15;
+    std::vector<float> fmc_bn02;
+    std::vector<float> cbh_bn02;
+    std::vector<float> fl_bn02;
+    std::vector<float> h_bn02;
+    fmc_bn02.push_back(0.001441);
+    cbh_bn02.push_back(0.0282);
+    fl_bn02.push_back(2.310);
+    h_bn02.push_back(4550);
+    fmcs.insert(std::make_pair(BN02, fmc_bn02));
+    cbhs.insert(std::make_pair(BN02, cbh_bn02));
+    fls.insert(std::make_pair(BN02, fl_bn02));
+    hs.insert(std::make_pair(BN02, h_bn02));
+
+    int BN03 = 16;
+    std::vector<float> fmc_bn03;
+    std::vector<float> cbh_bn03;
+    std::vector<float> fl_bn03;
+    std::vector<float> h_bn03;
+    fmc_bn03.push_back(0.000979);
+    cbh_bn03.push_back(0.0282);
+    fl_bn03.push_back(3.544);
+    h_bn03.push_back(4452);
+    fmcs.insert(std::make_pair(BN03, fmc_bn03));
+    cbhs.insert(std::make_pair(BN03, cbh_bn03));
+    fls.insert(std::make_pair(BN03, fl_bn03));
+    hs.insert(std::make_pair(BN03, h_bn03));
+    
+    int BN04 = 17;
+    std::vector<float> fmc_bn04;
+    std::vector<float> cbh_bn04;
+    std::vector<float> fl_bn04;
+    std::vector<float> h_bn04;
+    fmc_bn04.push_back(0.001556);
+    cbh_bn04.push_back(0.0282);
+    fl_bn04.push_back(2.164);
+    h_bn04.push_back(4452);
+    fmcs.insert(std::make_pair(BN04, fmc_bn04));
+    cbhs.insert(std::make_pair(BN04, cbh_bn04));
+    fls.insert(std::make_pair(BN04, fl_bn04));
+    hs.insert(std::make_pair(BN04, h_bn04));
+
+    int BN05 = 18;
+    std::vector<float> fmc_bn05;
+    std::vector<float> cbh_bn05;
+    std::vector<float> fl_bn05;
+    std::vector<float> h_bn05;
+    fmc_bn05.push_back(0.002365);
+    cbh_bn05.push_back(0.0282);
+    fl_bn05.push_back(1.954);
+    h_bn05.push_back(4452);
+    fmcs.insert(std::make_pair(BN05, fmc_bn05));
+    cbhs.insert(std::make_pair(BN05, cbh_bn05));
+    fls.insert(std::make_pair(BN05, fl_bn05));
+    hs.insert(std::make_pair(BN05, h_bn05));
+
+    int PL01 = 19;
+    std::vector<float> fmc_pl01;
+    std::vector<float> cbh_pl01;
+    std::vector<float> fl_pl01;
+    std::vector<float> h_pl01;
+    fmc_pl01.push_back(0.013174);
+    cbh_pl01.push_back(0.0282);
+    fl_pl01.push_back(0.838);
+    h_pl01.push_back(4399);
+    fmcs.insert(std::make_pair(PL01, fmc_pl01));
+    cbhs.insert(std::make_pair(PL01, cbh_pl01));
+    fls.insert(std::make_pair(PL01, fl_pl01));
+    hs.insert(std::make_pair(PL01, h_pl01));
+
+    int PL02 = 20;
+    std::vector<float> fmc_pl02;
+    std::vector<float> cbh_pl02;
+    std::vector<float> fl_pl02;
+    std::vector<float> h_pl02;
+    fmc_pl02.push_back(0.005973);
+    cbh_pl02.push_back(0.0282);
+    fl_pl02.push_back(3.019);
+    h_pl02.push_back(4870);
+    fmcs.insert(std::make_pair(PL02, fmc_pl02));
+    cbhs.insert(std::make_pair(PL02, cbh_pl02));
+    fls.insert(std::make_pair(PL02, fl_pl02));
+    hs.insert(std::make_pair(PL02, h_pl02));
+
+    int PL03 = 21;
+    std::vector<float> fmc_pl03;
+    std::vector<float> cbh_pl03;
+    std::vector<float> fl_pl03;
+    std::vector<float> h_pl03;
+    fmc_pl03.push_back(0.002481);
+    cbh_pl03.push_back(0.0282);
+    fl_pl03.push_back(3.333);
+    h_pl03.push_back(4870);
+    fmcs.insert(std::make_pair(PL03, fmc_pl03));
+    cbhs.insert(std::make_pair(PL03, cbh_pl03));
+    fls.insert(std::make_pair(PL03, fl_pl03));
+    hs.insert(std::make_pair(PL03, h_pl03));
+
+    int PL04 = 22;
+    std::vector<float> fmc_pl04;
+    std::vector<float> cbh_pl04;
+    std::vector<float> fl_pl04;
+    std::vector<float> h_pl04;
+    fmc_pl04.push_back(0.002712);
+    cbh_pl04.push_back(0.0282);
+    fl_pl04.push_back(3.249);
+    h_pl04.push_back(4870);
+    fmcs.insert(std::make_pair(PL04, fmc_pl04));
+    cbhs.insert(std::make_pair(PL04, cbh_pl04));
+    fls.insert(std::make_pair(PL04, fl_pl04));
+    hs.insert(std::make_pair(PL04, h_pl04));
+
+    int PL05 = 23;
+    std::vector<float> fmc_pl05;
+    std::vector<float> cbh_pl05;
+    std::vector<float> fl_pl05;
+    std::vector<float> h_pl05;
+    fmc_pl05.push_back(0.006516);
+    cbh_pl05.push_back(0.0282);
+    fl_pl05.push_back(4.087);
+    h_pl05.push_back(4870);
+    fmcs.insert(std::make_pair(PL05, fmc_pl05));
+    cbhs.insert(std::make_pair(PL05, cbh_pl05));
+    fls.insert(std::make_pair(PL05, fl_pl05));
+    hs.insert(std::make_pair(PL05, h_pl05));
+
+    int PL06 = 24;
+    std::vector<float> fmc_pl06;
+    std::vector<float> cbh_pl06;
+    std::vector<float> fl_pl06;
+    std::vector<float> h_pl06;
+    fmc_pl06.push_back(0.003255);
+    cbh_pl06.push_back(0.0282);
+    fl_pl06.push_back(3.714);
+    h_pl06.push_back(4870);
+    fmcs.insert(std::make_pair(PL06, fmc_pl06));
+    cbhs.insert(std::make_pair(PL06, cbh_pl06));
+    fls.insert(std::make_pair(PL06, fl_pl06));
+    hs.insert(std::make_pair(PL06, h_pl06));
+
+    int PL07 = 25;
+    std::vector<float> fmc_pl07;
+    std::vector<float> cbh_pl07;
+    std::vector<float> fl_pl07;
+    std::vector<float> h_pl07;
+    fmc_pl07.push_back(0.002596);
+    cbh_pl07.push_back(0.0282);
+    fl_pl07.push_back(4.063);
+    h_pl07.push_back(4870);
+    fmcs.insert(std::make_pair(PL07, fmc_pl07));
+    cbhs.insert(std::make_pair(PL07, cbh_pl07));
+    fls.insert(std::make_pair(PL07, fl_pl07));
+    hs.insert(std::make_pair(PL07, h_pl07));
+
+    int PL08 = 26;
+    std::vector<float> fmc_pl08;
+    std::vector<float> cbh_pl08;
+    std::vector<float> fl_pl08;
+    std::vector<float> h_pl08;
+    fmc_pl08.push_back(0.009777);
+    cbh_pl08.push_back(0.0282);
+    fl_pl08.push_back(0.905);
+    h_pl08.push_back(4372);
+    fmcs.insert(std::make_pair(PL08, fmc_pl08));
+    cbhs.insert(std::make_pair(PL08, cbh_pl08));
+    fls.insert(std::make_pair(PL08, fl_pl08));
+    hs.insert(std::make_pair(PL08, h_pl08));
+
+    int PL09 = 27;
+    std::vector<float> fmc_pl09;
+    std::vector<float> cbh_pl09;
+    std::vector<float> fl_pl09;
+    std::vector<float> h_pl09;
+    fmc_pl09.push_back(0.005429);
+    cbh_pl09.push_back(0.0282);
+    fl_pl09.push_back(3.164);
+    h_pl09.push_back(4816);
+    fmcs.insert(std::make_pair(PL09, fmc_pl09));
+    cbhs.insert(std::make_pair(PL09, cbh_pl09));
+    fls.insert(std::make_pair(PL09, fl_pl09));
+    hs.insert(std::make_pair(PL09, h_pl09));
+
+    int PL10 = 28;
+    std::vector<float> fmc_pl10;
+    std::vector<float> cbh_pl10;
+    std::vector<float> fl_pl10;
+    std::vector<float> h_pl10;
+    fmc_pl10.push_back(0.003799);
+    cbh_pl10.push_back(0.0282);
+    fl_pl10.push_back(2.742);
+    h_pl10.push_back(4816);
+    fmcs.insert(std::make_pair(PL10, fmc_pl10));
+    cbhs.insert(std::make_pair(PL10, cbh_pl10));
+    fls.insert(std::make_pair(PL10, fl_pl10));
+    hs.insert(std::make_pair(PL10, h_pl10));
+
+    int PL11 = 29;
+    std::vector<float> fmc_pl11;
+    std::vector<float> cbh_pl11;
+    std::vector<float> fl_pl11;
+    std::vector<float> h_pl11;
+    fmc_pl11.push_back(0.001325);
+    cbh_pl11.push_back(0.0282);
+    fl_pl11.push_back(2.464);
+    h_pl11.push_back(4684);
+    fmcs.insert(std::make_pair(PL11, fmc_pl11));
+    cbhs.insert(std::make_pair(PL11, cbh_pl11));
+    fls.insert(std::make_pair(PL11, fl_pl11));
+    hs.insert(std::make_pair(PL11, h_pl11));
+
+    int DX01 = 30;
+    std::vector<float> fmc_dx01;
+    std::vector<float> cbh_dx01;
+    std::vector<float> fl_dx01;
+    std::vector<float> h_dx01;
+    fmc_dx01.push_back(0.002134);
+    cbh_dx01.push_back(0.0282);
+    fl_dx01.push_back(8.25);
+    h_dx01.push_back(4746);
+    fmcs.insert(std::make_pair(DX01, fmc_dx01));
+    cbhs.insert(std::make_pair(DX01, cbh_dx01));
+    fls.insert(std::make_pair(DX01, fl_dx01));
+    hs.insert(std::make_pair(DX01, h_dx01));
+
+    int DX02 = 31;
+    std::vector<float> fmc_dx02;
+    std::vector<float> cbh_dx02;
+    std::vector<float> fl_dx02;
+    std::vector<float> h_dx02;
+    fmc_dx02.push_back(0.001903);
+    cbh_dx02.push_back(0.0282);
+    fl_dx02.push_back(7.125);
+    h_dx02.push_back(4652);
+    fmcs.insert(std::make_pair(DX02, fmc_dx02));
+    cbhs.insert(std::make_pair(DX02, cbh_dx02));
+    fls.insert(std::make_pair(DX02, fl_dx02));
+    hs.insert(std::make_pair(DX02, h_dx02));
+
+
+}
+
+
+float rate_of_spread(inputs *data, fuel_coefs *ptr, main_outs *at)
    {
-    printf(" %s not a recognizable fuel type\n ",fuel);
-    exit(9);
+    float p1, p2, p3, ws, tmp, rh, ch, fmc, fch, fv, ps,fp;
+   
+   //se = slope_effect(inp) ;
+   ws = data->ws;
+   tmp = data->tmp;
+   rh = data->rh;
+   ps = data->ps;
+   p1 = -12.86;
+   p2 = 0.04316;
+   p3 = 13.8;
+
+   ch = (-2.97374 + 0.262 * rh - 0.00982 * tmp);
+   fmc = fmcs[data->nftype][0]*60; //factor de propagacion en m/min
+   fch = (389.1624 + 14.3 * ch + 0.02 * pow(ch, 2.0)) / (3.559 + 1.6615 * ch + 2.62392 * pow(ch, 2.0)); //es -14.3 segun el libro
+   fv = p1 * exp(-p2 * ws) + p3;
+   at->rss = fmc*fch*(fv); 
+   
+   return at->rss * (at->rss >= 0) ;
+
    }
-   if(fuel[0]=='C' || fuel[0]=='M')cover='c';
-   else cover='n';
 
-   return (cover);
- }
-
- float ffmc_effect(float ffmc)
- {
-   float mc,ff;
-   mc=147.2*(101.0-ffmc)/(59.5+ffmc);
-   ff=91.9*exp(-0.1386*mc)*(1+pow(mc,5.31)/49300000.0);
-   return (ff);
- }
-
- float rate_of_spread(inputs *inp, fuel_coefs *ptr, main_outs *at)
- {
-   float fw,isz,mult,*mu=&mult,rsi  ;
-   at->ff=ffmc_effect(inp->ffmc);
-   at->raz=inp->waz;
-   isz=0.208*at->ff;
-   if(inp->ps>0)at->wsv=slope_effect(inp,ptr,at,isz);
-   else at->wsv=inp->ws;
-   if(at->wsv<40.0)fw=exp(0.05039*at->wsv);
-   else fw=12.0*(1.0-exp(-0.0818*(at->wsv-28)));
-   at->isi=isz*fw;
-   rsi=ros_calc(inp,ptr,at->isi,mu);
-   at->rss=rsi*bui_effect(ptr,at,inp->bui);
-   return(at->rss);
- }
-
- float ros_calc(inputs *inp, fuel_coefs *ptr,float isi,float *mult)
- {
-   float ros;
-   if(strncmp(inp->fueltype,"O1",2)==0)
-                return ( grass(ptr, inp->cur ,isi,mult) );
-   if(strncmp(inp->fueltype,"M1",2)==0 || strncmp(inp->fueltype,"M2",2)==0)
-                return ( mixed_wood(ptr,isi,mult,inp->pc) );
-   if(strncmp(inp->fueltype,"M3",2)==0 || strncmp(inp->fueltype,"M4",2)==0)
-                return ( dead_fir(ptr,inp->pdf,isi,mult) );
-   if(strncmp(inp->fueltype,"D2",2)==0)
-                return ( D2_ROS(ptr,isi,inp->bui,mult) );
- /* if all else has fail its a conifer   */
-   return ( conifer(ptr,isi,mult));
- }
-
-
-  float grass(fuel_coefs *ptr,float cur,float isi,float *mult)
-  {
-    float mu,ros;
-    if((float)(cur)>=58.8) mu=0.176 + 0.02*( (float)(cur) - 58.8 ) ;
-    else mu=0.005*(exp(0.061*(float)(cur) ) - 1.0) ;
-    ros=mu * (ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi)) , ptr->c));
-    if(mu<0.001)mu=0.001;  /* to have some value here*/
-    *mult=mu;
-    return(ros);
-  }
-
-  float mixed_wood(fuel_coefs *ptr, float isi,float *mu, int pc)
-  {
-    float ros, mult,ros_d1,ros_c2;
-    int i;
-    *mu=pc/100.0;
-    ros_c2=ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi)), ptr->c);
-    if(strncmp(ptr->fueltype,"M2",2)==0) mult=0.2;
-    else mult=1.0;
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    if(i>=numfuels) { printf(" prob in mixedwood   d1 not found \n");exit(9);}
-    ros_d1=ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c);
-
-    ros=(pc/100.0)*ros_c2 + mult* (100-pc)/100.0*ros_d1;
-    return(ros);
-  }
-
-  float dead_fir(fuel_coefs *ptr, int pdf, float isi, float *mu)
-  {
-    double a,b,c;
-    int i;
-    float ros,rosm3or4_max,ros_d1, greenness=1.0;
-    if(strncmp(ptr->fueltype,"M4",2)==0)greenness=0.2;
-
-    rosm3or4_max=ptr->a*pow( ( 1.0-exp(-1.0*ptr->b*isi)),ptr->c);
-
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    if(i>=numfuels) { printf(" prob in mixedwood   d1 not found \n");exit(9);}
-    ros_d1=ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c);
-
-    ros=(float)(pdf)/100.0*rosm3or4_max + (100.0-(float)(pdf))/100.0*greenness*ros_d1;
-
-    *mu=(float)(pdf)/100.0;
-
-    return(ros);
-  }
-
-  float D2_ROS(fuel_coefs *ptr, float isi, float bui, float *mu)
-  {
-    *mu=1.0;
-    if(bui>=80) return( ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c) );
-    else return (0.0);
-  }
-
-  float conifer(fuel_coefs *ptr, float isi, float *mu)
-  {
-    *mu=1.0;
-    return( ptr->a*pow( (1.0-exp(-1.0*ptr->b*isi) ),ptr->c) );
-  }
-
-  float bui_effect(fuel_coefs *ptr,main_outs *at, float bui)
-  {
-    float  bui_avg=50.0;
-
-    if(bui==0) bui=1.0;
-    at->be=exp(bui_avg*log(ptr->q)*( (1.0/bui)-(1.0/ptr->bui0) ) );
-    return (at->be);
-  }
-
-  float slope_effect(inputs *inp,fuel_coefs *ptr,main_outs *at, float isi )
-  /* ISI is ISZ really */
-  {
-    double isf,rsf,wse,ps,rsz,wsx,wsy,wsex,wsey,wsvx,wsvy,
-        wrad,srad,wsv,raz,check,wse2,wse1;
-    float mu=0.0;
-    ps=inp->ps*1.0;
-
-    if(ps>70.0)ps=70.0;   /* edited in version 4.6*/
-    at->sf=exp(3.533*pow(ps/100.0,1.2));
-    if(at->sf>10.0)at->sf=10.00;  /* added to ensure maximum is correct in version 4.6  */
-
-    if(strncmp(ptr->fueltype,"M1",2)==0 || strncmp(ptr->fueltype,"M2",2)==0)
-        isf=ISF_mixedwood(ptr,isi,inp->pc,at->sf);
-    else if(strncmp(ptr->fueltype,"M3",2)==0 || strncmp(ptr->fueltype,"M4",2)==0)
-        isf=ISF_deadfir(ptr,isi,inp->pdf,at->sf);
-    else{
-     rsz=ros_calc(inp,ptr,isi,&mu);
-     rsf=rsz*at->sf;
-
-     if(rsf>0.0)check=1.0-pow((rsf/(mu*ptr->a)),(1.0/ptr->c) );
-     else check=1.0;
-     if(check<slopelimit_isi)check=slopelimit_isi;
-
-     isf=(1.0/(-1.0*ptr->b))*log(check);
-    }
-    if(isf==0.0)isf=isi;  /* should this be 0.0001 really  */
-    wse1 = log(isf/(0.208*at->ff))/0.05039;
-    if(wse1<=40.0) wse=wse1;
-    else{
-      if(isf>(0.999*2.496*at->ff) ) isf=0.999*2.496*at->ff;
-      wse2=28.0-log(1.0-isf/(2.496*at->ff))/0.0818;
-      wse=wse2;
-    }
-    wrad=inp->waz/180.0*3.1415926;
-    wsx=inp->ws*sin(wrad);
-    wsy=inp->ws*cos(wrad);
-    srad=inp->saz/180.0*3.1415926;
-    wsex=wse*sin(srad);
-    wsey=wse*cos(srad);
-    wsvx=wsx+wsex;
-    wsvy=wsy+wsey;
-    wsv=sqrt(wsvx*wsvx+wsvy*wsvy);
-    raz=acos(wsvy/wsv);
-    raz=raz/3.1415926*180.0;
-    if(wsvx<0)raz=360-raz;
-    at->raz=raz;
-    return( (float)(wsv) );
-  }
-
- float ISF_mixedwood(fuel_coefs *ptr, float isz, int pc, float sf)
-  {
-    float check, mult,rsf_d1,rsf_c2,isf_d1,isf_c2;
-    int i;
-
-    rsf_c2=sf*ptr->a*pow( (1.0-exp(-1.0*ptr->b*isz)), ptr->c);
-    if(rsf_c2>0.0)check=1.0-pow((rsf_c2/(ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_c2=(1.0/(-1.0*ptr->b))*log(check);
-
-    if(strncmp(ptr->fueltype,"M2",2)==0) mult=0.2;
-    else mult=1.0;
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    rsf_d1=sf*(mult*ptr->a)*pow( (1.0-exp(-1.0*ptr->b*isz) ),ptr->c);
-
-    if(rsf_d1>0.0)check=1.0-pow((rsf_d1/(mult*ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_d1=(1.0/(-1.0*ptr->b))*log(check);
-
-    return  ( ((float)(pc)/100.0)*isf_c2 + (100-(float)(pc))/100.0*isf_d1  );
-  }
-
- float ISF_deadfir(fuel_coefs *ptr, float isz, int pdf, float sf)
-  {
-    float check, mult,rsf_d1,rsf_max,isf_d1,isf_max;
-    int i;
-
-    rsf_max=sf*ptr->a*pow( (1.0-exp(-1.0*ptr->b*isz)), ptr->c);
-    if(rsf_max>0.0)check=1.0-pow((rsf_max/(ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_max=(1.0/(-1.0*ptr->b))*log(check);
-
-    if(strncmp(ptr->fueltype,"M4",2)==0) mult=0.2;
-    else mult=1.0;
-
-    for(i=0;strncmp(ptr->fueltype,"D1",2)!=0 && i<numfuels;ptr++,i++);
-    rsf_d1=sf*(mult*ptr->a)*pow( (1.0-exp(-1.0*ptr->b*isz) ),ptr->c);
-
-    if(rsf_d1>0.0)check=1.0-pow((rsf_d1/(mult*ptr->a)),(1.0/ptr->c) );
-    else check=1.0;
-    if(check<slopelimit_isi)check=slopelimit_isi;
-    isf_d1=(1.0/(-1.0*ptr->b))*log(check);
-
-    return  ( ((float)(pdf)/100.0)*isf_max + ( 100.0-(float)(pdf) )/100.0*isf_d1  );
-  }
-
-
-  float fire_intensity (float fc,float ros)
-  {
-    return (300.0*fc*ros);
-  }
-
-  float foliar_moisture(inputs *inp, main_outs *at)
-  {
-    float latn;
-    int nd;
-    at->jd=inp->jd;
-    at->jd_min=inp->jd_min;
-    if(inp->jd_min<=0)
-     {
-       if(inp->elev<0)
-        {
-         latn=23.4*exp(-0.0360*(150-inp->lon))+46.0;
-         at->jd_min=(int)(0.5+151.0*inp->lat/latn);
-        }
-       else
-        {
-         latn=33.7*exp(-0.0351*(150-inp->lon))+43.0;
-         at->jd_min=(int)(0.5+142.1*inp->lat/latn+(0.0172*inp->elev));
-        }
-     }
-    nd=abs(inp->jd - at->jd_min);
-    if(nd>=50) return(120.0);
-    if(nd>=30 && nd<50) return (32.9+3.17*nd-0.0288*nd*nd);
-    return(85.0+0.0189*nd*nd);
-  }
-
-  float surf_fuel_consump(inputs *inp)
-  {
-    float sfc,ffc,wfc,bui,ffmc,sfc_c2,sfc_d1;
-    char ft[3];
-    strncpy(ft,inp->fueltype,2);
-    bui=inp->bui;
-    ffmc=inp->ffmc;
-    if(strncmp(ft,"C1",2)==0)
-     {
-/*       sfc=1.5*(1.0-exp(-0.23*(ffmc-81.0)));*/
-        if(ffmc>84) sfc=0.75+0.75*sqrt(1-exp(-0.23*(ffmc-84) ));
-        else  sfc=0.75-0.75*sqrt(1-exp(0.23*(ffmc-84) ) );
-       return (  sfc>=0 ? sfc: 0.0 );
-     }
-    if(strncmp(ft,"C2",2)==0 || strncmp(ft,"M3",2)==0 ||
-            strncmp(ft,"M4",2)==0)return ( 5.0*(1.0-exp(-0.0115*bui)) );
-    if(strncmp(ft,"C3",2)==0 || strncmp(ft,"C4",2)==0)
-        return( 5.0 * pow( (1.0-exp(-0.0164*bui)) , 2.24));
-    if(strncmp(ft,"C5",2)==0 || strncmp(ft,"C6",2)==0 )
-        return( 5.0* pow( (1.0-exp(-0.0149*bui)) , 2.48) );
-    if(strncmp(ft,"C7",2)==0)
-     {
-      ffc=2.0*(1.0-exp(-0.104*(ffmc-70.0)));
-      if(ffc<0) ffc=0.0;
-      wfc=1.5*(1.0-exp(-0.0201*bui));
-      return( ffc + wfc );
-     }
-    if(strncmp(ft,"O1",2)==0) return( (inp->gfl) /* change this*/ );
-    if(strncmp(ft,"M1",2)==0 || strncmp(ft,"M2",2)==0)
-     {
-      sfc_c2=5.0*(1.0-exp(-0.0115*bui));
-      sfc_d1=1.5*(1.0-exp(-0.0183*bui));
-      sfc=inp->pc/100.0*sfc_c2 + (100.0-inp->pc)/100.0*sfc_d1;
-      return(sfc);
-     }
-    if(strncmp(ft,"S1",2)==0)
-     {
-      ffc=4.0 * (1.0-exp(-0.025*bui));
-      wfc=4.0*(1.0-exp(-0.034*bui));
-      return ( ffc+wfc);
-     }
-    if(strncmp(ft,"S2",2)==0)
-     {
-      ffc=10.0*(1.0-exp(-0.013*bui));
-      wfc=6.0*(1.0-exp(-0.060*bui));
-      return (ffc+wfc);
-     }
-    if(strncmp(ft,"S3",2)==0)
-     {
-      ffc=12.0*(1.0-exp(-0.0166*bui));
-      wfc=20.0*(1.0-exp(-0.0210*bui));
-      return ( ffc+wfc);
-     }
-    if(strncmp(ft,"D1",2)==0) return ( 1.5*(1.0-exp(-0.0183*bui)));
-    if(strncmp(ft,"D2",2)==0) return ( bui>=80 ? 1.5*(1.0-exp(-0.0183*bui)) : 0.0);
-
-    printf("prob in sfc func \n");exit(9);
-    return(-99);
-  }
-
-
-  float crit_surf_intensity(fuel_coefs *ptr, float fmc)
-  {
-
-   return ( 0.001*pow(ptr->cbh*(460.0+25.9*fmc),1.5) );
-  }
-
-  float critical_ros(char ft[3],float sfc,float csi)
-  {
-      if(sfc>0)return ( csi/(300.0*sfc) );
-      else return(0.0);
-  }
-
-  float crown_frac_burn(float rss,float rso)
-  {
-   float cfb;
-   cfb=1.0-exp(-0.230*(rss-rso));
-   return (  cfb>0 ? cfb :0.0 );
-  }
-
-  char fire_type( float csi,float sfi)
-  {
-   return ( sfi>csi ? 'c' : 's' );
-  }
-
-  char fire_description(float cfb)
-  {
-    if(cfb<0.1)return('S');
-    if(cfb<0.9 && cfb>=0.1)return('I');
-    if(cfb>=0.9)return( 'C' );
-    return('*');
-  }
-
-  float final_ros(inputs *inp, float fmc,float isi,float cfb,float rss)
-  {
-    float rsc,ros;
-    if(strncmp(inp->fueltype,"C6",2)==0)
-    {
-     rsc=foliar_mois_effect(isi,fmc);
-     ros = rss+cfb*(rsc-rss);
-    }
-    else ros=rss;
-    return(ros);
-  }
-
-  float foliar_mois_effect(float isi,float fmc)
-  {
-    float fme,rsc, fme_avg = 0.778;
-    fme=1000.0*pow(1.5-0.00275*fmc,4.0)/(460.0 + 25.9*fmc);
-    rsc=60.0*(1.0-exp(-0.0497*isi))*fme/fme_avg;
-    return(rsc);
-  }
-
-  float crown_consump(inputs *inp, fuel_coefs *ptr,float cfb)
-  {
-   float cfc;
-   cfc=ptr->cfl*cfb;
-   if(strncmp(inp->fueltype,"M1",2)==0 || strncmp(inp->fueltype,"M2",2)==0)
-         cfc = inp->pc/100.0*cfc;
-   if(strncmp(inp->fueltype,"M3",2)==0 || strncmp(inp->fueltype,"M4",2)==0)
-         cfc = inp->pdf/100.0*cfc;
-   return(cfc);
-  }
-
-
-  float l_to_b(char ft[3],float ws)
-  {
-    if(strncmp(ft,"O1",2)==0)return( ws<1.0 ? 1.0 : (1.1*pow(ws,0.464)));
-    else  return (1.0 +8.729*pow(1.0-exp(-0.030*ws),2.155));
-  }
-
-  void set_all (fire_struc *ptr, int time)
-  {
-     ptr->time=0;
-     ptr->rost=ptr->ros;
-     ptr->dist=time*ptr->ros;
-  }
-  float backfire_isi(main_outs *at)
-  {
-    float bfw;
-    bfw = exp(-0.05039*at->wsv);
-    return ( 0.208*at->ff*bfw);
-  }
-
-  float backfire_ros(inputs *inp,fuel_coefs *ptr,main_outs *at,float bisi)
-  {
-    float mult=0.0,bros;
-    bros=ros_calc(inp,ptr,bisi,&mult);
-    bros *= bui_effect(ptr,at,inp->bui);
-    return(bros);
-  }
-
-  float area(float dt,float df)
-  {
-    float a,b;
-    a=dt/2.0;
-    b=df;
-    return ( a*b*3.1415926/10000.0);
-  }
-
-  float perimeter (fire_struc *h,fire_struc *b, snd_outs *sec, float lb)
-  {
-    float mult,p;
-    mult=3.1415926*(1.0+1.0/lb)*(1.0+pow(((lb-1.0)/(2.0*(lb+1.0))),2.0));
-    p=(h->dist + b->dist)/2.0*mult;
-    sec->pgr = (h->rost + b->rost)/2.0*mult;
-
-    return(p);
-  }
-
-  float acceleration(inputs *inp,float cfb)
-  {
-    int i;
-    char canopy='c',
-     open_list[10][3]={"O1","C1","S1","S2","S3","o1","c1","s1","s2","s3"};
-    for(i=0;strncmp(inp->fueltype,open_list[i],2)!=0 && i<10;i++);
-    if(i<10) canopy='o';
-    if(canopy=='o') return(0.115);
-    else return(0.115 -18.8*pow(cfb,2.5)*exp(-8.0*cfb) );
-  }
-
-  float flankfire_ros(float ros,float bros,float lb)
+float flankfire_ros(float ros,float bros,float lb)
    {
-      return  ( (ros+bros)/(lb*2.0) );
+      return  ((ros + bros) / ( lb * 2.0)) ;
+   }
+
+/* ----------------- Length-to-Breadth --------------------------*/
+float l_to_b(float ws, fuel_coefs *ptr)
+  {
+    float l1, l2, lb ;
+    l1 = 2.233;//1.411; // ptr->l1 ;
+    l2 = -0.01031; //0.01745; // ptr->l2 ;
+	lb = 1.0 + pow(l1 * exp(-l2 * ws) - l1, 2.0) ;
+    return lb;
+  }
+
+/* ----------------- Back Rate of Spread --------------------------*/
+float backfire_ros(main_outs *at, snd_outs *sec)
+  {
+    float hb, bros, lb ;
+    //lb = l_to_b(data->fueltype,at->wsv) ;
+    lb = sec->lb ;
+    hb = (lb + sqrt(pow(lb,2) - 1.0)) /  (lb - sqrt(pow(lb, 2) - 1.0)) ;
+
+    bros = at->rss / hb ;
+    
+    return bros * (bros >= 0);
+  }
+
+float flame_length(inputs *data, fuel_coefs *ptr) //REVISAR ESTA ECUACIÓN
+   {
+       float q1, q2, q3, fl, ws ;
+
+       ws = data->ws ;
+       q1 = 2 ;
+       q2 = 2 ;
+       q3 = 2 ; 
+
+       fl = pow(q1 * exp(-q2 * ws) + q3, 2) ;
+       return fl; 
+   }
+
+float angleFL(inputs *data, fuel_coefs *ptr)
+   {
+       float angle, fl, y, ws ;
+       ws = data->ws ;
+       fl = flame_length(data, ptr) ;
+       y = 10.0 / 36.0 * ws ;
+
+       angle = atan(2.24 * sqrt(fl / pow(y, 2)))  ;
+       return angle;
+   }
+
+float flame_height(inputs *data, fuel_coefs *ptr)
+  {
+      float fh, phi ;
+      phi = angleFL(data, ptr) ;
+      fh = flame_length(data, ptr) * sin(phi) ;
+      return fh ;
+  }
+
+float byram_intensity(main_outs* at, fuel_coefs* ptr) {
+    float fl, ib;
+    fl = at->fl;
+    ib = 259.833 * pow(fl, 2.174);
+    ib = std::ceil(ib * 100.0) / 100.0;
+    return ib;
+}
+
+int fmc_scen(int scenario) {
+    int fmc;
+    fmc = 120; //hacer forma de ingresarlo manualmente
+    return fmc;
+}
+
+bool fire_type(inputs *data, main_outs* at)
+  {
+      float intensity, critical_intensity, cbh;
+      int fmc;
+      bool crownFire = false;
+      intensity = at->byram;
+      cbh = data->cbh;
+      fmc = fmc_scen(3); //modificar para ingresar manualmente
+      critical_intensity = pow((0.01 * cbh * (460 + 25.9 * fmc)), 1.5);
+
+      if ((intensity > critical_intensity) && cbh != 0) crownFire = true;
+      return crownFire ;
+  }
+
+float rate_of_spread10(inputs *data)
+   {
+   // FM 10 coef
+   float p1 = 0.2802, p2 = 0.07786, p3 = 0.01123 ;
+   float ros, ros10, ws, ffros, fcbd, fccf;
+
+   ffros = data->factor_ros10 ;
+   fcbd  = data->factor_cbd ;
+   fccf  = data->factor_ccf ;
+   
+   ws = data->ws ;
+   ros10 = 1. / (p1 * exp(-p2 * ws) + p3) ;
+   ros = ffros * ros10 + fccf * data->ccf + fcbd * data->factor_cbd ;
+   
+   return(ros);
+   }
+ 
+float backfire_ros10(fire_struc *hptr, snd_outs *sec)
+  {
+    float hb, bros, lb ;
+    lb = sec->lb ;
+    hb = (lb + sqrt(pow(lb, 2) - 1.0)) /  (lb - sqrt(pow(lb, 2) - 1.0)) ;
+
+    bros = hptr->ros / hb ;
+    
+    return bros;
+  }
+  
+ void calculate(inputs *data,  fuel_coefs * ptr, main_outs *at, snd_outs *sec, fire_struc *hptr, fire_struc *fptr,fire_struc *bptr)
+{
+    // Hack: Initialize coefficients 
+    setup_const();
+
+	// Aux
+	float  ros, bros, lb, fros;
+	bool crownFire;
+    // const;
+    
+    // Populate fuel coefs struct
+	//ptr->fueltype = data->fueltype;
+	if (data->verbose){
+		std::cout  << "Populate fuel types " <<  std::endl;
+		std::cout  << "NfTypes:"  << data->nftype <<  std::endl;
+		std::cout  << "scen:"  << data->scen <<  std::endl;
+	}
+    
+	ptr->nftype = data->nftype;
+    //cout << "   tipo " << data->nftype << "\n";
+    //std::cout << "hola:" << fmcs[data->nftype][0] << std::endl;
+
+    ptr->fmc = fmcs[data->nftype][0];
+    //cout << "   fmc combustible " << ptr->fmc << "\n";
+
+    ptr->cbh = cbhs[data->nftype][0];
+    //cout << "   cbh " << ptr->cbh << "\n";
+
+    ptr->fl = fls[data->nftype][0];
+    //cout << "   fl " << ptr->fl << "\n";
+
+    ptr->h = hs[data->nftype][0];
+    //cout << "   h " << ptr->h << "\n";
+
+    // Step 1: Calculate HROS (surface)
+    at->rss = rate_of_spread(data, ptr, at);
+    hptr->rss = at->rss ;
+	
+    
+    // Step 2: Calculate Length-to-breadth
+    sec->lb = l_to_b(data->ws, ptr) ;
+    
+    // Step 3: Calculate BROS (surface)
+    bptr->rss = backfire_ros(at, sec) ;
+    
+    // Step 4: Calculate central FROS (surface)
+    fptr->rss = flankfire_ros(hptr->rss, bptr->rss, sec->lb);
+    
+    // Step 5: Ellipse components
+    at->a = (hptr->rss + bptr->rss) / 2. ;
+    at->b = (hptr->rss + bptr->rss) / (2. * sec->lb) ; 
+    at->c = (hptr->rss - bptr->rss) / 2. ; 
+    
+    // Step 6: Flame Length
+    at->fl = flame_length(data, ptr);
+    
+    // Step 7: Flame angle
+    at->angle = angleFL(data, ptr) ;
+    
+	// Step 8: Flame Height
+    at->fh = flame_height(data, ptr) ;
+
+    // Step 9: Byram Intensity
+    at->byram = byram_intensity(at, ptr);
+    
+	// Step 10: Criterion for Crown Fire Initiation (no init if user does not want to include it)
+    if (data->cros) {
+        crownFire = fire_type(data, at);
+        if (data->verbose) {
+            cout << "Checking crown Fire conditions " << crownFire << "\n";
+        }
+    }
+    else {
+        crownFire = false;
     }
 
-  float flank_spread_distance(inputs *inp,fire_struc *ptr,snd_outs *sec,
-      float hrost,float brost,float hd, float bd,float lb,float a)
-  {
-    sec->lbt=(lb-1.0)*(1.0-exp(-a*inp->time)) +1.0;
-    ptr->rost=(hrost+brost)/(sec->lbt*2.0);
-    return ( (hd+bd)/(2.0*sec->lbt) );
-  }
-
-  float spread_distance(inputs *inp,fire_struc *ptr,float a)
-  {
-    ptr->rost= ptr->ros*(1.0-exp(-a*inp->time));
-    return ( ptr->ros*(inp->time+(exp(-a*inp->time)/a)-1.0/a));
-  }
-
-  int time_to_crown(float ros,float rso,float a)
-  {
-    float ratio;
-    if(ros>0)ratio= rso/ros; 
-    else ratio=1.1;
-    if(ratio>0.9 && ratio<=1.0 )ratio=0.9;
-    if(ratio<1.0)return (int)(log(1.0-ratio)/-a);
-    else return(99);
-  }
-
-  float fire_behaviour(inputs *inp,fuel_coefs *ptr,main_outs *at,
-                             fire_struc *f)
-  {
-    float sfi,fi;
-    char firetype;
-    sfi=fire_intensity(at->sfc,f->rss);
-    firetype=fire_type(at->csi,sfi);
-    if(firetype=='c')
-     {
-       f->cfb = crown_frac_burn(f->rss,at->rso);
-       f->fd = fire_description(f->cfb);
-       f->ros = final_ros(inp,at->fmc,f->isi,f->cfb,f->rss);
-       f->cfc = crown_consump(inp,ptr,f->cfb);
-       f->fc = f->cfc + at->sfc;
-       fi = fire_intensity(f->fc,f->ros);
-     }
-    if(firetype!='c' || at->covertype=='n')
-     {
-       f->fc = at->sfc;
-       fi = sfi;
-       f->cfb=0.0;
-       f->fd='S';
-       f->ros=f->rss;
-     }
-    return(fi);
-  }
-
-  float flank_fire_behaviour(inputs *inp,fuel_coefs *ptr,main_outs *at,
-                             fire_struc *f)
-  {
-    float sfi,fi;
-    char firetype;
-    sfi=fire_intensity(at->sfc,f->rss);
-    firetype=fire_type(at->csi,sfi);
-    if(firetype=='c')
-     {
-       f->cfb = crown_frac_burn(f->rss,at->rso);
-       f->fd = fire_description(f->cfb);
-       f->cfc = crown_consump(inp,ptr,f->cfb);
-       f->fc = f->cfc + at->sfc;
-       fi = fire_intensity(f->fc,f->ros);
-     }
-    if(firetype!='c' || at->covertype=='n')
-     {
-       f->fc = at->sfc;
-       fi = sfi;
-       f->cfb=0.0;
-       f->fd='S';
-    /*   f->ros=f->rss;  removed...v4.5   should not have been here ros set in flankfire_ros()  */
-     }
-    return(fi);
-  }
 
 
-  void zero_main(main_outs *m)
-  {
-    //printf("dlw debug, enter zero_main\n");
-    m->sfc=0.0;
-    //printf("dlw debug, completed sfc zero assign\n");
-    m->csi=0.0;m->rso=0.0;m->fmc=0;m->sfi=0.0;
-    m->rss=0.0;m->isi=0.0;m->be=0.0;m->sf=1.0;m->raz=0.0;m->wsv=0.0;
-    m->ff=0.0; m->jd=0;m->jd_min=0;
-    m->covertype=' ';
-  }
+	// If we have Crown fire, update the ROSs
+    if (crownFire){
+            hptr->ros = rate_of_spread10(data) ;
+            bptr->ros = backfire_ros10(hptr,sec) ;
+            fptr->ros = flankfire_ros(hptr->ros, bptr->ros, sec->lb) ;
+            
+			if (data->verbose){
+				cout << "hptr->ros = " << hptr->ros << "\n" ;
+				cout << "bptr->ros = " << bptr->ros << "\n" ;
+				cout << "fptr->ros = " << fptr->ros << "\n" ;
+			}
 
-  void zero_sec (snd_outs *s)
-  {
-    //printf("dlw debug, enter zero_sec\n");
-    //printf("dlw debug, trying s->lb=%f\n",s->lb);
-    s->lb=0.0;
-    //printf("dlw debug, completed s->lb=0.0\n"); 
-    s->area=0.0;
-    //printf("dlw debug, completed s->area=0.0\n"); 
-    s->perm=0.0;
-    //printf("dlw debug, completed s->perm=0.0\n"); 
-    s->pgr=0.0;
-    //printf("dlw debug, completed s->pgr=0.0\n"); 
-  }
+            at->a = (hptr->ros + bptr->ros) / 2. ;
+            at->b = (hptr->ros + bptr->ros) / (2. * sec->lb) ; 
+            at->c = (hptr->ros - bptr->rss) / 2 ; 
+			at->cros = true;
+    }
+	
+	// Otherwise, use the surface alues
+    else{
+        hptr->ros = hptr->rss ;
+        bptr->ros = bptr->rss ; 
+        fptr->ros = fptr->rss ;
+		if (data->verbose){
+			cout << "hptr->ros = " << hptr->ros << "\n" ;
+			cout << "bptr->ros = " << bptr->ros << "\n" ;
+			cout << "fptr->ros = " << fptr->ros << "\n" ;
+		}
+    }
+	
+	if (data->verbose){
+		cout << "--------------- Inputs --------------- \n" ;
+		cout << "ws = " << data->ws << "\n" ;
+		cout << "coef data->cbh = " << data->cbh << "\n" ;
+		cout << "coef ptr->fmc = " << ptr->fmc << "\n" ;
+		cout << "coef ptr->cbh = " << ptr->cbh << "\n" ;
+		cout << "coef ptr->fl = " << ptr->fl << "\n" ;
+		cout << "coef ptr->h = " << ptr->h << "\n" ;
+		//cout << "coef ptr->q2 = " << ptr->q2 << "\n" ;
+		//cout << "coef ptr->q3 = " << ptr->q3 << "\n" ;
+		cout << "\n" ;
 
-  void zero_fire (fire_struc *a)
-  {
-    //printf("dlw debug, enter zero_fire\n");
-    //printf("try before assign a->ros=%f\n", a->ros);
-    a->ros=0.0;
-    //printf("dlw debug, did a->ros\n"); 
-    a->dist=0.0;a->rost=0.0;a->cfb=0.0;a->fi=0.0;
-    //printf("dlw debug, did a->fi\n"); 
-    a->fc=0.0;a->cfc=0.0;a->time=0.0;
-    //printf("dlw debug, did a->time\n"); 
-  }
+		cout << "---------------- Outputs --------------- \n" ;
+		cout << "at->rss = " << at->rss << "\n" ;
+		cout << "hptr->rss = " << hptr->rss << "\n" ;
+		cout << "lb = " << sec->lb << "\n" ;
+		cout << "bptr->rss = " << bptr->rss << "\n" ;
+		cout << "fptr->rss = " << fptr->rss << "\n" ;
+		cout << "axis a = " << at->a << "\n" ;
+		cout << "axis b = " << at->b << "\n" ;
+		cout << "axis c = " << at->c << "\n" ;
+		cout << "fl = " << at->fl << "\n";
+		cout << "angle = " << at->angle << "\n";
+		cout << "fh = " << at->fh << "\n";
+		cout << "Crown Fire = " << crownFire << "\n";
+	}
+}
+
+void determine_destiny_metrics(inputs* data, fuel_coefs* ptr, main_outs* metrics) {
+    // Hack: Initialize coefficients 
+    setup_const();
+
+    // Aux
+    float  ros, bros, lb, fros;
+    bool crownFire = false;
+
+    //ptr->q1 = q_coeff[data->nftype][0];
+    //ptr->q2 = q_coeff[data->nftype][1];
+    //ptr->q3 = q_coeff[data->nftype][2];
+    ptr->nftype = data->nftype;
+    // Step 6: Flame Length
+    metrics->fl = flame_length(data, ptr);
+    // Step 9: Byram Intensity
+    metrics->byram = byram_intensity(metrics, ptr);
+
+    // Step 10: Criterion for Crown Fire Initiation (no init if user does not want to include it)
+    if (data->cros) {
+        crownFire = fire_type(data, metrics);
+        if (data->verbose) {
+            cout << "Checking crown Fire conditions " << crownFire << "\n";
+        }
+    }
+    else {
+        crownFire = false;
+    }
+
+    metrics->cros = crownFire;
+}
