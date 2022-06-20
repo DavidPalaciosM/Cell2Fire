@@ -92,7 +92,7 @@ def GenerateGridsTif(file,i,metric,id_counter,tif_dictionary,data_dictionary,met
     max_grid=0
     hours=len(grids)
     data_dictionary[i,metric]=[[]]*hours
-    #if len(grids)>setMaxGrids: #FOR SETTING MAX GRIDS
+    #if len(grids)>setMaxGrids: #FOR SETTING MAX GRIDS, NOT DEVELOPED YET
      #   new_list=list(range(1,len(grids),int(grids/setMaxGrids)))
       #  str_new_list=[str(value) for value in new_list]
        # grids=[grid for grid in grids if any(x in str_new_list for x in grid)]
@@ -127,21 +127,4 @@ def GenerateSummaryTif(OutFolder,metric,data_dictionary,meta,nsims):
         dst.write(max_layer,4)
         dst.set_band_description(4,"max")
         dst.close()
-#def CsvToGeotiff(InFolder,OutFolder,Nsims,file): #take a csv file and transform to Geotiff
- #   return 0
-#test="C:\\Users\\david\\projects\\Cell2Fire_Spain\\data\\Vilopriu_2013_40x40\\cbd.asc"
-#output=openrasterio(test)
-#InFolder="C:\\Users\\david\\projects\\Cell2Fire_Spain\\data\\Vilopriu_2013_40x40\\"
-#print(output)
-#test2="C:\\Users\\david\\projects\\Cell2Fire_Spain\\results\\Vilopriu"
-#InputGeotiff(InFolder)
-#InFolder="D:\\Cell2Fire\\Cell2Fire_Spain_Linux\\data\\Hom_Fuel_101_40x40\\"
-#OutFolder="D:\\Cell2Fire\\Cell2Fire_Spain_Linux\\results\\tifff\\"
-#OutputGeotiff(InFolder, OutFolder, 10)
-#tif=rasterio.open("C:\\Users\\david\\projects\\Cell2Fire_Spain\\results\\Vilopriu\\Geotiffs\\Out_Geotiff_3.tif")
-#tif=rasterio.open("C:\\Users\\david\\projects\\Cell2Fire_Spain\\results\\Vilopriu\\Geotiffs\\Hourly_Grids_5.tif")
-#tif=rasterio.open("C:\\Users\\david\\projects\\Cell2Fire_Spain\\results\\Vilopriu\\ROSFile_Summary.tif")
-#tif=rasterio.open("D:\\Cell2Fire\\Cell2Fire_Spain_Linux\\results\\tifff\\Geotiffs\\Out_Geotiff_6.tif")
-#print(tif.descriptions)
-#tif.close()
-#pyplot.imshow(tif.read(2), cmap='pink')#,vmin=0,vmax=185)
+

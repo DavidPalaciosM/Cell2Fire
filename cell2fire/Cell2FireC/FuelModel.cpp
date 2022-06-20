@@ -89,7 +89,7 @@ Originally  Written at P.N.F.I.  December 91, by Mike Wotton
   void calculate(inputs *data,fuel_coefs *pt,main_outs *at,
       snd_outs *sec,fire_struc *hptr,fire_struc *fptr,fire_struc *bptr)
   {
-    char firetype;
+    int firetype;
     float accn;
     fuel_coefs **ptr=&pt;
     zero_main(at);
@@ -111,9 +111,9 @@ Originally  Written at P.N.F.I.  December 91, by Mike Wotton
        at->csi=crit_surf_intensity((*ptr),at->fmc);
        at->rso=critical_ros(data->fueltype,at->sfc,at->csi);
        firetype=fire_type(at->csi,at->sfi);
+       at->ftype=firetype;
 
-
-       if(firetype=='c')
+       if(firetype==1)
         {
          hptr->cfb=crown_frac_burn(at->rss,at->rso);
          hptr->fd=fire_description(hptr->cfb);
@@ -123,7 +123,7 @@ Originally  Written at P.N.F.I.  December 91, by Mike Wotton
          hptr->fi=fire_intensity(hptr->fc,hptr->ros);
         }
      }
-    if(at->covertype=='n' || firetype=='s')
+    if(at->covertype=='n' || firetype==0)
      {
       hptr->fd='S';
       hptr->ros=at->rss;
@@ -160,6 +160,34 @@ Originally  Written at P.N.F.I.  December 91, by Mike Wotton
     if(data->pattern==1 && data->time>0) sec->perm=perimeter(hptr,bptr,sec,sec->lbt);
     else sec->perm=perimeter(hptr,bptr,sec,sec->lb);
    }
+
+
+void determine_destiny_metrics(inputs* data, fuel_coefs* pt, main_outs* metrics) {
+    int firetype=0;
+    fuel_coefs **ptr=&pt;
+    zero_main(metrics);
+    metrics->covertype=get_fueltype_number(ptr,data->fueltype);
+    if (metrics->covertype=='f'){
+        metrics->rss=0;
+        metrics->sfi=0;
+        metrics->ftype=0;
+    }
+    else{
+    metrics->ff=ffmc_effect(data->ffmc);
+    metrics->rss=rate_of_spread(data,(*ptr),metrics);
+    metrics->sfc=surf_fuel_consump(data);
+    metrics->sfi=fire_intensity(metrics->sfc,metrics->rss);
+
+    if(metrics->covertype=='c')
+     {
+       metrics->fmc=foliar_moisture(data,metrics);
+       metrics->csi=crit_surf_intensity((*ptr),metrics->fmc);
+       metrics->rso=critical_ros(data->fueltype,metrics->sfc,metrics->csi);
+       firetype=fire_type(metrics->csi,metrics->sfi);
+       metrics->ftype=firetype;
+       }
+    }
+}
 
 void setup_const(fuel_coefs *ptr)
  {
@@ -267,7 +295,9 @@ void setup_const(fuel_coefs *ptr)
    if(i>=numfuels)
    {
     printf(" %s not a recognizable fuel type\n ",fuel);
-    exit(9);
+    //exit(9);
+    cover='f';
+    return (cover);
    }
    if(fuel[0]=='C' || fuel[0]=='M')cover='c';
    else cover='n';
@@ -577,8 +607,11 @@ void setup_const(fuel_coefs *ptr)
 
   float crit_surf_intensity(fuel_coefs *ptr, float fmc)
   {
-
-   return ( 0.001*pow(ptr->cbh*(460.0+25.9*fmc),1.5) );
+   if (ptr->cbh>0){
+   return ( 0.001*pow(ptr->cbh*(460.0+25.9*fmc),1.5) );}
+   else{
+    return (999999999); // if cbh is equal to 0, critical intensity is set to big number
+   }
   }
 
   float critical_ros(char ft[3],float sfc,float csi)
@@ -594,9 +627,9 @@ void setup_const(fuel_coefs *ptr)
    return (  cfb>0 ? cfb :0.0 );
   }
 
-  char fire_type( float csi,float sfi)
+  int fire_type( float csi,float sfi)
   {
-   return ( sfi>csi ? 'c' : 's' );
+   return ( sfi>csi ? 1 : 0 );
   }
 
   char fire_description(float cfb)
@@ -728,10 +761,10 @@ void setup_const(fuel_coefs *ptr)
                              fire_struc *f)
   {
     float sfi,fi;
-    char firetype;
+    int firetype;
     sfi=fire_intensity(at->sfc,f->rss);
     firetype=fire_type(at->csi,sfi);
-    if(firetype=='c')
+    if(firetype==1)
      {
        f->cfb = crown_frac_burn(f->rss,at->rso);
        f->fd = fire_description(f->cfb);
@@ -740,7 +773,7 @@ void setup_const(fuel_coefs *ptr)
        f->fc = f->cfc + at->sfc;
        fi = fire_intensity(f->fc,f->ros);
      }
-    if(firetype!='c' || at->covertype=='n')
+    if(firetype!=1 || at->covertype=='n')
      {
        f->fc = at->sfc;
        fi = sfi;
@@ -755,10 +788,10 @@ void setup_const(fuel_coefs *ptr)
                              fire_struc *f)
   {
     float sfi,fi;
-    char firetype;
+    int firetype;
     sfi=fire_intensity(at->sfc,f->rss);
     firetype=fire_type(at->csi,sfi);
-    if(firetype=='c')
+    if(firetype==1)
      {
        f->cfb = crown_frac_burn(f->rss,at->rso);
        f->fd = fire_description(f->cfb);
@@ -766,7 +799,7 @@ void setup_const(fuel_coefs *ptr)
        f->fc = f->cfc + at->sfc;
        fi = fire_intensity(f->fc,f->ros);
      }
-    if(firetype!='c' || at->covertype=='n')
+    if(firetype!=1 || at->covertype=='n')
      {
        f->fc = at->sfc;
        fi = sfi;

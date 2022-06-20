@@ -27,7 +27,8 @@ typedef struct
 *   Forest structure
 */
 typedef struct
-   { int cellside, rows, cols; 
+   { int cellside, rows, cols;
+   	  double xllcorner, yllcorner;
       std::vector<std::unordered_map<std::string, int>> adjCells;
 	  std::vector<std::vector<int>> coordCells;
    } forestDF;
@@ -66,6 +67,8 @@ public:
 	// Populates ForestDF
 	void parseForestDF(forestDF * frt_ptr, std::vector<std::vector<std::string>> & DF);
 	
+	//Populate Probability Ignition
+	void parsePROB(std::vector<float>& probabilities, std::vector<std::vector<std::string>>& DF, int NCells);
 	// Populate Harvested Cells 
 	void parseHarvestedDF(std::unordered_map<int, std::vector<int>> & hc, std::vector<std::vector<std::string>> & DF, int HPeriods);
 	

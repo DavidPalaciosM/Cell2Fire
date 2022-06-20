@@ -34,7 +34,7 @@ typedef struct
 
  typedef struct
   {  float hffmc,sfc,csi,rso,fmc,sfi,rss,isi,be,sf,raz,wsv,ff;
-     int jd_min,jd;
+     int jd_min,jd,ftype;
      char covertype;
   } main_outs;
 
@@ -80,7 +80,7 @@ float crit_surf_intensity(fuel_coefs *ptr,float fmc);
 
 float critical_ros(char ft[3],float sfc,float csi);
 
-char fire_type(float csi,float sfi);
+int fire_type(float csi,float sfi);
 
 float crown_frac_burn(float ros,float rso);
 
@@ -124,7 +124,7 @@ void set_all(fire_struc *ptr, int time);
 
 void calculate(inputs *data,fuel_coefs *ptr,main_outs *at,
       snd_outs *sec,fire_struc *hptr,fire_struc *fptr,fire_struc *bptr);
-
+void determine_destiny_metrics(inputs* data, fuel_coefs* pt, main_outs* metrics);
 void zero_main(main_outs *m);
 
 void zero_sec (snd_outs *s);

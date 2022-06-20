@@ -65,6 +65,7 @@ class Cell2FireC:
                    '--grids' if (self.args.grids) else '', '--final-grid' if (self.args.finalGrid) else '',
                    '--Fire-Period-Length', str(self.args.input_PeriodLen),
                    '--output-messages' if (self.args.OutMessages) else '',
+                   '--out-behavior' if (self.args.OutBehavior) else '',
                    '--weather', self.args.WeatherOpt,
                    '--nweathers', str(self.args.nweathers),
                    '--ROS-CV', str(self.args.ROS_CV),
@@ -74,13 +75,13 @@ class Cell2FireC:
                    '--HFI-Threshold', str(self.args.HFI_Threshold),
                    '--bbo' if (self.args.BBO) else '',
                    '--HarvestPlan', self.args.HCells if(self.args.HCells is not None) else '',
-				   '--verbose' if (self.args.verbose) else '',]
+                   '--verbose' if (self.args.verbose) else '',]
         
-	#Geotiff Input Generator
+    #Geotiff Input Generator
         if self.args.Geotiffs:
             InputGeotiff(self.args.InFolder)
         
-	# Output log
+    # Output log
         if self.args.OutFolder is not None:
             if os.path.isdir(self.args.OutFolder) is False:
                 os.makedirs(self.args.OutFolder)
@@ -99,8 +100,8 @@ class Cell2FireC:
         # End of the replications
         print("End of Cell2FireC execution...")
         
-	#Geotiff Output Generator
-	if self.args.Geotiffs:
+    #Geotiff Output Generator
+        if self.args.Geotiffs:
             OutputGeotiff(self.args.InFolder,self.args.OutFolder,self.args.nsims)
     
     # Run C++ Sim with heuristic treatment 
@@ -115,6 +116,7 @@ class Cell2FireC:
                    '--grids' if (self.args.grids) else '', '--final-grid' if (self.args.finalGrid) else '',
                    '--Fire-Period-Length', str(self.args.input_PeriodLen),
                    '--output-messages' if (self.args.OutMessages) else '',
+                   '--out-behavior' if (self.args.OutBehavior) else '',
                    '--weather', self.args.WeatherOpt,
                    '--nweathers', str(self.args.nweathers),
                    '--ROS-CV', str(self.args.ROS_CV),
@@ -124,11 +126,11 @@ class Cell2FireC:
                    '--HFI-Threshold', str(self.args.HFI_Threshold),
                    '--bbo' if (self.args.BBO) else '',
                    '--HarvestPlan', HarvestPlanFile if(HarvestPlanFile is not None) else '',
-				   '--verbose' if (self.args.verbose) else '']
+                   '--verbose' if (self.args.verbose) else '']
         #Geotiff Input Generator
         if self.args.Geotiffs:
             InputGeotiff(self.args.InFolder)
-	
+    
         # Output log
         if OutFolder is not None:
             if os.path.isdir(OutFolder) is False:
@@ -149,8 +151,8 @@ class Cell2FireC:
         else:
             print("End of Cell2FireC execution...")
     
-	#Geotiff Output Generator
-	if self.args.Geotiffs:
+    #Geotiff Output Generator
+        if self.args.Geotiffs:
             OutputGeotiff(self.args.InFolder,self.args.OutFolder,self.args.nsims)
     # Pre-processing
     '''

@@ -155,7 +155,8 @@ Cell2Fire::Cell2Fire(arguments _args) : CSVWeather(_args.InFolder + "Weather.csv
 	this->cellSide = frdf.cellside;
 	this->areaCells= cellSide * cellSide;
 	this->perimeterCells = 4 * cellSide;
-	
+	this->xllcorner = frdf.xllcorner;
+	this->yllcorner = frdf.yllcorner;
 	this->coordCells = frdf.coordCells;
 	this->adjCells = frdf.adjCells;
 		
@@ -186,6 +187,9 @@ Cell2Fire::Cell2Fire(arguments _args) : CSVWeather(_args.InFolder + "Weather.csv
 	this->fTypeCells2 = std::vector<string> (this->nCells, "Burnable"); 
     this->statusCells = std::vector<int> (this->nCells, 0);
 	
+	this->ignProb = std::vector<float>(this->nCells, 1);
+	CSVParser.parsePROB(this->ignProb, DF, this->nCells);
+
 	// Non burnable types: populate relevant fields such as status and ftype
 	std::string NoFuel = "NF ";
 	std::string NoData = "ND ";
@@ -245,10 +249,21 @@ Cell2Fire::Cell2Fire(arguments _args) : CSVWeather(_args.InFolder + "Weather.csv
 	this->WeatherDF = this->CSVWeather.getData();
 	std::cout << "\nWeather DataFrame from instance " << this->CSVWeather.fileName << std::endl;
 	
+		
+	if (this->args.WeatherOpt.compare("distribution") == 0) {
+		CSVReader CSVWeatherDistribution(_args.InFolder + "WeatherDistribution.csv", ",");
+		this->WDist = CSVWeatherDistribution.getData();
+		CSVWeatherDistribution.printData(WDist);
+	}
+
+	std::vector<string> WeatherHistory;
+	this->counter_wt = 0;
+
 	// Populate WDF 
 	int WPeriods = WeatherDF.size() - 1;  // -1 due to header
 	wdf_ptr = &wdf[0];
-	
+	std::cout << "Weather Periods: " << WPeriods << std::endl;
+
 	// Populate the wdf objects
 	this->CSVWeather.parseWeatherDF(wdf_ptr, this->WeatherDF, WPeriods);
 	//DEBUGthis->CSVWeather.printData(this->WeatherDF);
@@ -472,6 +487,28 @@ void Cell2Fire::reset(int rnumber, double rnumber2, int simExt=1){
 		CSVFolder.MakeDir(this->messagesFolder);
 		this->messagesFolder = this->args.OutFolder + "/Messages/";
 	}
+	
+	//ROS Folder
+	if (this->args.OutFireBehavior) {
+		CSVWriter CSVFolder("", "");
+		this->messagesFolder = "mkdir -p " + this->args.OutFolder + "/RateOfSpread/";
+		CSVFolder.MakeDir(this->messagesFolder);
+		this->messagesFolder = this->args.OutFolder + "/RateOfSpread/";
+	}
+	//Intensity Folder
+	if (this->args.OutFireBehavior) {
+		CSVWriter CSVFolder("", "");
+		this->messagesFolder = "mkdir -p " + this->args.OutFolder + "/Intensity/";
+		CSVFolder.MakeDir(this->messagesFolder);
+		this->messagesFolder = this->args.OutFolder + "/Intensity/";
+	}
+	//Crown Folder
+	if (this->args.OutFireBehavior && this->args.AllowCROS) {
+		CSVWriter CSVFolder("", "");
+		this->messagesFolder = "mkdir -p " + this->args.OutFolder + "/CrownFire/";
+		CSVFolder.MakeDir(this->messagesFolder);
+		this->messagesFolder = this->args.OutFolder + "/CrownFire/";
+	}
 		
 	// Random Weather 
 	/*std::cout << "Weather Option:" << this->args.WeatherOpt << std::endl;
@@ -501,6 +538,75 @@ void Cell2Fire::reset(int rnumber, double rnumber2, int simExt=1){
 		this->CSVWeather.parseWeatherDF(wdf_ptr, this->WeatherDF, WPeriods);
 	}
 	
+
+	if (this->args.WeatherOpt.compare("distribution") == 0) {
+		bool selectWeather = false;
+		int countCases = 0;
+		std::string weather_name;
+		while (!selectWeather) {
+			std::default_random_engine generator3(args.seed * simExt * time(NULL)); //creates a different generator solving cases when parallel running creates simulations at same time
+			std::uniform_int_distribution<int> distribution(1, this->WDist.size() - 1);
+			int weather_idx = distribution(generator3);
+
+			float rd_number = (float)rand() / ((float)(RAND_MAX / 0.999999999));
+			float probability_weather = std::stof(this->WDist[weather_idx][1]);
+			//DEBUGstd::cout<<"prob: "<<(probability_weather)<<std::endl;
+			//DEBUGstd::cout<<"weather_idx: "<<(weather_idx)<<std::endl;
+			//DEBUGstd::cout<<"rdnumber: "<<(rd_number)<<std::endl;
+			if (probability_weather > rd_number) { //rd_number cannot be 1, but can be 0. So if prob weather has prob=0 it does not have a chance of being selected, and if it is 1, it will always be selected
+				weather_name = this->WDist[weather_idx][0];
+				//DEBUGstd::cout << "Weather name selected: " << weather_name << std::endl;
+				selectWeather = true;
+			}
+			countCases++;
+			if (countCases > 1000) {
+				weather_name = this->WDist[weather_idx][0];
+				selectWeather = true;
+			}
+			selectWeather = true;
+		}
+
+		// Random Weather 	
+		this->CSVWeather.fileName = this->args.InFolder + "Weathers/" + weather_name + ".csv";
+		WeatherHistory.push_back(weather_name);
+
+
+		/* Weather DataFrame */
+		try {
+			this->WeatherDF = this->CSVWeather.getData();
+		}
+		catch (std::invalid_argument& e) {
+			std::cerr << e.what() << std::endl;
+			std::abort();
+		}
+		std::cout << "\nWeather file selected: " << this->CSVWeather.fileName << std::endl;
+
+		// Populate WDF 
+		int WPeriods = this->WeatherDF.size() - 1;  // -1 due to header
+		wdf_ptr = &wdf[0];
+		std::cout << "Weather Periods: " << WPeriods << std::endl;
+
+		// Populate the wdf objects
+		this->CSVWeather.parseWeatherDF(wdf_ptr, this->WeatherDF, WPeriods);
+		//DEBUGthis->CSVWeather.printData(this->WeatherDF);
+
+		// Check maxFirePeriods and Weather File consistency (reset MaxFirePeriods and recalculate)
+		int maxFP = this->args.MinutesPerWP / this->args.FirePeriodLen * WPeriods;
+		this->args.MaxFirePeriods = 10000000;
+		//DEBUGstd::cout << "Int MaxFP: " << maxFP << std::endl;
+		//DEBUGstd::cout << "MinutesPerWP: " << this->args.MinutesPerWP << std::endl;
+		//DEBUGstd::cout << "FirePeriodLen: " << this->args.FirePeriodLen << std::endl;
+		//DEBUGstd::cout << "MaxfirePeriods: " << this->args.MaxFirePeriods << std::endl;
+
+		if (this->args.MaxFirePeriods > maxFP) {
+			this->args.MaxFirePeriods = maxFP;
+			if (this->args.verbose) {
+				std::cout << "Maximum fire periods are set to: " << this->args.MaxFirePeriods << " based on the weather file, Fire Period Length, and Minutes per WP" << std::endl;
+			}
+		}
+
+	}
+
 	// Random ROS-CV
 	this->ROSRV = std::abs(rnumber2);
 	//std::cout << "ROSRV: " << this->ROSRV << std::endl;
@@ -516,6 +622,7 @@ void Cell2Fire::reset(int rnumber, double rnumber2, int simExt=1){
 	this->fTypeCells2 = std::vector<string> (this->nCells, "Burnable"); 
 	this->statusCells = std::vector<int> (this->nCells, 0);
 	this->FSCell.clear();
+	this->crownMetrics.clear();//intensity and crown
 	
 	// Non burnable types: populate relevant fields such as status and ftype
 	std::string NoFuel = "NF ";
@@ -573,16 +680,38 @@ bool Cell2Fire::RunIgnition(std::default_random_engine generator, int rnumber3){
 	*******************************************************************/
 	// Ignitions 
 	int aux = 0;
+	int selected = 0;
 	int loops = 0;
+	int microloops = 0;
 	this->noIgnition = false;
+	std::default_random_engine generator2(args.seed*rnumber3*time(NULL)); //creates a different generator solving cases when parallel running creates simulations at same time
 	std::unordered_map<int, CellsFBP>::iterator it;
 	std::uniform_int_distribution<int> distribution(1, this->nCells);
-	
+
 	// No Ignitions provided
 	if (this->args.Ignitions == 0) { 
 		while (true) {
-			// Pick any cell (uniform distribution [a,b])
-			aux = distribution(generator);
+			microloops = 0;
+			while (true) {
+				selected = distribution(generator2);
+				float rd_number = (float)rand() / ((float)(RAND_MAX/0.999999999));
+				//float rd_number = (float)rand() / ((float)(RAND_MAX / 0.999999));
+				//DEBUGstd::cout << "selectedPoint: " << selected << std::endl;
+				//DEBUGstd::cout << "selectedProbability: " << ignProb[selected-1] << std::endl;
+				//DEBUGstd::cout << "randomNumber: " << rd_number << std::endl;
+				//if (ignProb[selected - 1] / static_cast<float>(100) > rd_number) {    //If probabilities enter as integers, e.g: 80 as 0.8
+				if (this->ignProb[selected - 1] > rd_number) {
+					aux = selected;
+					//DEBUSstd::cout << "selected_point" << std::endl;
+					break;
+				}
+				microloops++;
+				if (microloops > this->nCells * 100) {
+					this->noIgnition = true;
+					break;
+				}
+
+			}
 			
 			// Check information (Debugging)
 			if (this->args.verbose){
@@ -804,7 +933,7 @@ std::unordered_map<int, std::vector<int>> Cell2Fire::SendMessages(){
 			if (!this->args.BBOTuning){
 				aux_list = it->second.manageFire(this->fire_period[this->year-1], this->availCells,  & df[cell-1], this->coef_ptr, 
 															   this->coordCells, this->Cells_Obj, this->args_ptr, &wdf[this->weatherPeriod],
-															   &this->FSCell, this->ROSRV);								
+															   &this->FSCell, &this->crownMetrics, this->ROSRV);								
 			}
 												
 			
@@ -812,7 +941,7 @@ std::unordered_map<int, std::vector<int>> Cell2Fire::SendMessages(){
 				auto factors = BBOFactors.find(NFTypesCells[cell-1]);
 				aux_list = it->second.manageFireBBO(this->fire_period[this->year-1], this->availCells,  & df[cell-1], this->coef_ptr, 
 																		this->coordCells, this->Cells_Obj, this->args_ptr, &wdf[this->weatherPeriod],
-																		&this->FSCell, this->ROSRV, factors->second);								
+																		&this->FSCell, &this->crownMetrics, this->ROSRV, factors->second);								
 			}
 			//std::cout << "Sale de Manage Fire" << std::endl;
 		} 
@@ -1156,6 +1285,103 @@ void Cell2Fire::Results(){
 	}
 
 	
+	// RateOfSpread
+	if (this->args.OutFireBehavior) {
+		this->rosFolder = this->args.OutFolder + "/RateOfSpread/";
+		std::string rosName;
+		std::vector<int> statusCells2(this->nCells, 0); //(long int, int);
+
+		// Update status 
+		for (auto& bc : this->burningCells) {
+			statusCells2[bc - 1] = 1;
+		}
+		for (auto& ac : this->burntCells) {
+			statusCells2[ac - 1] = 1;
+		}
+		for (auto& hc : this->harvestCells) {
+			statusCells2[hc - 1] = -1;
+		}
+
+		if (this->sim < 10) {
+			rosName = this->rosFolder + "ROSFile0" + std::to_string(this->sim) + ".asc";
+		}
+
+		else {
+			rosName = this->rosFolder + "ROSFile" + std::to_string(this->sim) + ".asc";
+		}
+
+		if (this->args.verbose) {
+			std::cout << "We are generating the Hitting ROS to a asc file " << rosName << std::endl;
+		}
+		CSVWriter CSVPloter(rosName, " ");
+		CSVPloter.printRosAscii(this->rows, this->cols, this->xllcorner, this->yllcorner, this->cellSide, this->FSCell, statusCells2);
+	}
+
+	// Intensity
+	if (this->args.OutFireBehavior) {
+		this->rosFolder = this->args.OutFolder + "/Intensity/";
+		std::string rosName;
+		std::vector<int> statusCells2(this->nCells, 0); //(long int, int);
+
+		// Update status 
+		for (auto& bc : this->burningCells) {
+			statusCells2[bc - 1] = 1;
+		}
+		for (auto& ac : this->burntCells) {
+			statusCells2[ac - 1] = 1;
+		}
+		for (auto& hc : this->harvestCells) {
+			statusCells2[hc - 1] = -1;
+		}
+
+		if (this->sim < 10) {
+			rosName = this->rosFolder + "Intensity0" + std::to_string(this->sim) + ".asc";
+		}
+
+		else {
+			rosName = this->rosFolder + "Intensity" + std::to_string(this->sim) + ".asc";
+		}
+
+		if (this->args.verbose) {
+			std::cout << "We are generating the Intensity to a asc file " << rosName << std::endl;
+		}
+		CSVWriter CSVPloter(rosName, " ");
+		CSVPloter.printIntensityAscii(this->rows, this->cols, this->xllcorner, this->yllcorner, this->cellSide, this->crownMetrics, statusCells2);
+	}
+
+
+	// Crown
+	if ((this->args.OutFireBehavior) && (this->args.AllowCROS)) {
+		this->rosFolder = this->args.OutFolder + "/CrownFire/";
+		std::string rosName;
+		std::vector<int> statusCells2(this->nCells, 0); //(long int, int);
+
+		// Update status 
+		for (auto& bc : this->burningCells) {
+			statusCells2[bc - 1] = 1;
+		}
+		for (auto& ac : this->burntCells) {
+			statusCells2[ac - 1] = 1;
+		}
+		for (auto& hc : this->harvestCells) {
+			statusCells2[hc - 1] = -1;
+		}
+
+		if (this->sim < 10) {
+			rosName = this->rosFolder + "Crown0" + std::to_string(this->sim) + ".asc";
+		}
+
+		else {
+			rosName = this->rosFolder + "Crown" + std::to_string(this->sim) + ".asc";
+		}
+
+		if (this->args.verbose) {
+			std::cout << "We are generating the Crown behavior to a asc file " << rosName << std::endl;
+		}
+		CSVWriter CSVPloter(rosName, " ");
+		CSVPloter.printCrownAscii(this->rows, this->cols, this->xllcorner, this->yllcorner, this->cellSide, this->crownMetrics, statusCells2);
+	}
+
 	
 }
 
@@ -1401,6 +1627,9 @@ int main(int argc, char * argv[]){
 	// CP: Modified to account the case when no ignition occurs and no grids are generated (currently we are not generating grid when no ignition happened, TODO)
 	int num_threads = args.nthreads;
     int TID = 0;
+	// Initialize Instance outside the parallel zone for not creating the forest -nthreads* times-
+	Cell2Fire Forest2(args); //generate Forest object
+	std::vector<Cell2Fire> Forests(num_threads, Forest2);
 
     // Parallel zone
 	#pragma omp parallel num_threads(num_threads)
@@ -1429,7 +1658,7 @@ int main(int argc, char * argv[]){
 		int rnumber3;
 
         // Initialize Instance
-		Cell2Fire Forest(args);
+		Cell2Fire Forest = Forests[TID];
 
 		// Random ignition 
 		std::uniform_int_distribution<int> udistributionIgnition(1, Forest.nCells);		// Get random ignition point

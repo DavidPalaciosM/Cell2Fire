@@ -65,6 +65,7 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
 		
 	// Booleans
 	bool out_messages = false;
+	bool out_fire_behavior = false;
 	bool out_trajectories = false;
 	bool no_output = false; 
 	bool verbose_input = false;
@@ -81,6 +82,12 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
         printf("OutMessages: %d \n", out_messages);
     }
 	
+	//--fire-behavior
+	if (cmdOptionExists(argv, argv + argc, "--out-behavior")) {
+		out_fire_behavior = true;
+		printf("OutMessages: %d \n", out_fire_behavior);
+	}
+
 	//--trajectories
     if(cmdOptionExists(argv, argv+argc, "--trajectories")){
         out_trajectories = true;
@@ -321,6 +328,7 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
 		
 	// booleans
 	args_ptr->OutMessages = out_messages;
+	args_ptr->OutFireBehavior = out_fire_behavior;
 	args_ptr->Trajectories = out_trajectories; 
 	args_ptr->NoOutput = no_output;
 	args_ptr->verbose = verbose_input; 
@@ -341,7 +349,8 @@ void printArgs(arguments args){
 	std::cout << "NWeatherFiles: " << args.NWeatherFiles << std::endl;	
 	std::cout << "MinutesPerWP: " << args.MinutesPerWP << std::endl; 
 	std::cout << "MaxFirePeriods: " << args.MaxFirePeriods << std::endl; 
-	std::cout << "Messages: " << args.OutMessages << std::endl; 
+	std::cout << "Messages: " << args.OutMessages << std::endl;
+	std::cout << "FireBehavior: " << args.OutFireBehavior << std::endl;
 	std::cout << "HarvestPlan: " << args.HarvestPlan << std::endl; 
 	std::cout << "TotalYears: " << args.TotalYears << std::endl; 
 	std::cout << "TotalSims: " << args.TotalSims << std::endl; 

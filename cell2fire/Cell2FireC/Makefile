@@ -1,52 +1,19 @@
 EIGENDIR     = /usr/include/eigen3/
-# EIGENDIR     = /usr/local/include/eigen3/ # For Mac only.
 CC = g++
 MPCC = g++
 OPENMP = -openmp
 CFLAGS = -std=c++11 -O3 -I$(EIGENDIR)
-LIBS = -m64 -fPIC -fno-strict-aliasing -fexceptions -DNDEBUG -DIL_STD -lm -lpthread -ldl
+LIBS = -m64 -fPIC -fno-strict-aliasing -fexceptions -DNDEBUG -DIL_STD -lm -lpthread -ldl 
 
 TARGETS = Cell2Fire
+
 all:	$(TARGETS)
 
-# if not Ubuntu, then OSX is assumed.
-OS = Ubuntu
-
-# Mode is Parallel if it is not Serial
-MODE=Serial
-PARALLEL_DIR = parallel_code/Cell2FireParallel/Cell2FireC_Parallel
-
 Cell2Fire: Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
-
-# This will cause 'Extraneous text after `ifneq' directive'
-ifneq ($(OS), Ubuntu) && ($(OS), OSX))
-$(info OS must be either Ubuntu or OSX)
-endif
-
-ifneq ($(MODE), Serial) && ($(MODE), Parallel))
-$(info MODE must be either Serial or Parallel)
-endif
-
-ifeq ($(MODE), Serial)
-		$(CC) -o $@ $(LIBS) Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
-else
-ifeq ($(OS), Ubuntu)
 	$(CC) -o $@ $(LIBS) -fopenmp Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
-else
-	$(CC) -o $@ $(LIBS) -Xclang -fopenmp -lomp Cell2Fire.o CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o Lightning.o WriteCSV.o Ellipse.o
-endif
-endif
 
 Cell2Fire.o: Cell2Fire.cpp CellsFBP.o FuelModel.o SpottingFBP.o ReadCSV.o ReadArgs.o WriteCSV.o
-ifeq ($(MODE), Serial)
-	$(CC) -c $(CFLAGS) Cell2Fire.cpp
-else
-ifeq ($(OS), Ubuntu)
 	$(CC) -c $(CFLAGS) -fopenmp Cell2Fire.cpp
-else
-	$(CC) -c $(CFLAGS) -Xclang -fopenmp -lomp Cell2Fire.cpp
-endif
-endif
 
 SpottingFBP.o: SpottingFBP.cpp SpottingFBP.h CellsFBP.h
 	$(CC) -c $(CFLAGS) SpottingFBP.cpp CellsFBP.h
@@ -54,19 +21,14 @@ SpottingFBP.o: SpottingFBP.cpp SpottingFBP.h CellsFBP.h
 CellsFBP.o: CellsFBP.cpp CellsFBP.h FuelModel.o
 	$(CC) -c $(CFLAGS) CellsFBP.cpp
 
-FuelModel.o: FuelModel.c FuelModel.h
-	$(CC) -c $(CFLAGS) FBPfunc5_NoDebug.c
+FuelModel.o: FuelModel.cpp FuelModel.h
+	$(CC) -c $(CFLAGS) FuelModel.cpp
 
 ReadCSV.o: ReadCSV.cpp ReadCSV.h FuelModel.o
 	$(CC) -c $(CFLAGS) ReadCSV.cpp
 
-READARGS = ReadArgs
-ifneq ($(MODE), Serial)
-	READARGS = $(PARALLEL_DIR)/ReadArgs
-endif
-
-ReadArgs.o: $(READARGS).cpp $(READARGS).h
-	$(CC) -c $(CFLAGS) $(READARGS).cpp
+ReadArgs.o: ReadArgs.cpp ReadArgs.h
+	$(CC) -c $(CFLAGS) ReadArgs.cpp
 
 Lightning.o: Lightning.cpp Lightning.h
 	$(CC) -c $(CFLAGS) Lightning.cpp

@@ -65,6 +65,7 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
 		
 	// Booleans
 	bool out_messages = false;
+	bool out_fire_behavior = false;
 	bool out_trajectories = false;
 	bool no_output = false; 
 	bool verbose_input = false;
@@ -81,6 +82,12 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
         printf("OutMessages: %d \n", out_messages);
     }
 	
+	//--fire-behavior
+	if (cmdOptionExists(argv, argv + argc, "--out-behavior")) {
+		out_fire_behavior = true;
+		printf("OutMessages: %d \n", out_fire_behavior);
+	}
+
 	//--trajectories
     if(cmdOptionExists(argv, argv+argc, "--trajectories")){
         out_trajectories = true;
@@ -144,6 +151,7 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
 	int dweather_files = 1;
 	int dmax_fire_periods= 10000000;
 	int dseed = 123;
+	int dnthreads = 1;
 	int diradius = 0;
 	float dROS_Threshold= 0.1;
 	float dHFI_Threshold= 0.1;
@@ -280,6 +288,14 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
 		args_ptr->seed = std::stoi (seed ,&sz); 
     }
 	else args_ptr->seed = dseed;
+
+	//--nthreads  (int)
+	char * nthreads = getCmdOption(argv, argv + argc, "--nthreads");
+    if (nthreads){
+        printf("nthreads: %s \n", nthreads);
+		args_ptr->nthreads = std::stoi (nthreads ,&sz); 
+    }
+	else args_ptr->nthreads = dnthreads;
 	
 	// Populate structure
 	// Strings 
@@ -312,6 +328,7 @@ void parseArgs(int argc, char * argv[], arguments * args_ptr)
 		
 	// booleans
 	args_ptr->OutMessages = out_messages;
+	args_ptr->OutFireBehavior = out_fire_behavior;
 	args_ptr->Trajectories = out_trajectories; 
 	args_ptr->NoOutput = no_output;
 	args_ptr->verbose = verbose_input; 
@@ -332,7 +349,8 @@ void printArgs(arguments args){
 	std::cout << "NWeatherFiles: " << args.NWeatherFiles << std::endl;	
 	std::cout << "MinutesPerWP: " << args.MinutesPerWP << std::endl; 
 	std::cout << "MaxFirePeriods: " << args.MaxFirePeriods << std::endl; 
-	std::cout << "Messages: " << args.OutMessages << std::endl; 
+	std::cout << "Messages: " << args.OutMessages << std::endl;
+	std::cout << "FireBehavior: " << args.OutFireBehavior << std::endl;
 	std::cout << "HarvestPlan: " << args.HarvestPlan << std::endl; 
 	std::cout << "TotalYears: " << args.TotalYears << std::endl; 
 	std::cout << "TotalSims: " << args.TotalSims << std::endl; 
@@ -347,6 +365,7 @@ void printArgs(arguments args){
 	std::cout << "noOutput: " << args.NoOutput << std::endl; 
 	std::cout << "verbose: " << args.verbose << std::endl; 
 	std::cout << "seed: " << args.seed << std::endl; 
+	std::cout << "nthreads: " << args.nthreads << std::endl; 
 	
 	
 	

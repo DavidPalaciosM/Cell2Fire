@@ -50,6 +50,9 @@ class Cell2Fire {
 		 int weatherperiod = 0;
 		 long int nCells;
 		 int nIgnitions = 0;
+		 int counter_wt = 0;
+		 double xllcorner;
+		 double yllcorner;
 		 
 		 // Booleans
 		 bool noIgnition = true;  		//  None = -1
@@ -67,12 +70,17 @@ class Cell2Fire {
 		// Strings	
 		 string gridFolder;
 		 string messagesFolder;
+		 string rosFolder;
+		 string historyFolder;
 	
 		 // Vectors
 		 std::vector<int> fire_period;
 		 std::vector<std::vector<int>> coordCells;
 		 std::vector<std::unordered_map<std::string, int>> adjCells;
 		 std::vector<std::vector<std::string>> DF;
+		 std::vector<std::vector<std::string>> WDist;
+		 std::vector<std::string> WeatherHistory;
+		 std::vector<float> ignProb; // (long int&, int);
 		 std::vector<int> statusCells; //(long int, int);
 		 std::vector<int> fTypeCells; // (long int&, int); 
 		 std::vector<string> fTypeCells2; // (long int&, const char [9]);
@@ -80,6 +88,8 @@ class Cell2Fire {
 		 std::vector<int> IgnitionPoints;
 		 vector<int> burnedOutList;
 		 std::vector<double> FSCell;
+		 std::vector<float> crownMetrics;
+
 		 //std::vector<unordered_set<int>> IgnitionSets;
 		 std::vector<std::vector<int>> IgnitionSets;
 		 

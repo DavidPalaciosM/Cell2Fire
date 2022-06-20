@@ -219,6 +219,11 @@ def make_parser():
                         dest="OutMessages",
                         default=False,
                         action='store_true')
+    parser.add_argument("--out-behavior",
+                        help="Generate .asc files with fire behavior metrics (crown, hit ROS, Intensity)",
+                        dest="OutBehavior",
+                        default=False,
+                        action="store_true")                    
     parser.add_argument("--Prometheus-tuned",
                         help="Activates the predefined tuning parameters based on Prometheus",
                         dest="PromTuning",

@@ -257,6 +257,27 @@ void CSVReader::parseWeatherDF(weatherDF * wdf_ptr, std::vector<std::vector<std:
 	
 }
 
+void CSVReader::parsePROB(std::vector<float>& probabilities, std::vector<std::vector<std::string>>& DF, int NCells) {
+	int i;
+
+	// Ints 
+	float Prob;
+
+	// CChar
+	const char* faux;
+	std::string::size_type sz;   // alias of size_t
+
+	// Loop over cells (populating per row)
+	for (i = 1; i <= NCells; i++) {
+		//printf("Populating DF for cell %d\n", i);
+		if (DF[i][20].compare("") == 0) Prob = 1;
+		else Prob = std::stof(DF[i][20], &sz);
+		// Set values
+		probabilities.push_back(Prob);
+
+	}
+}
+
 
 /*
 * Populate IgnitionDF
@@ -344,7 +365,8 @@ void CSVReader::parseForestDF(forestDF * frt_ptr, std::vector<std::vector<std::s
 	// Ints 
 	int cellside, rows, cols;
 	int i, j;
-	
+	double xllcorner, yllcorner;
+
 	// Others 
 	std::vector<std::unordered_map<std::string, int>> adjCells;
  	std::string::size_type sz;   // alias of size_t
@@ -367,7 +389,8 @@ void CSVReader::parseForestDF(forestDF * frt_ptr, std::vector<std::vector<std::s
 	cols = std::stoi (DF[0][1], &sz);
 	rows = std::stoi (DF[1][1], &sz);
 	cellside = std::stoi (DF[4][1], &sz);
-	
+	xllcorner = std::stod(DF[2][1], &sz);
+	yllcorner = std::stod(DF[3][1], &sz);
 	//DEBUGprintf("cols: %d,  rows:  %d,   cellside:  %d\n", cols, rows, cellside);
 	
 	// CoordCells and Adjacents

@@ -271,7 +271,7 @@ double CellsFBP::allocate(double offset, double base, double ros1, double ros2) 
 std::vector<int> CellsFBP::manageFire(int period, std::unordered_set<int> & AvailSet,      
                                                           inputs * df_ptr, fuel_coefs * coef, 
 														  std::vector<std::vector<int>> & coordCells, std::unordered_map<int, CellsFBP> & Cells_Obj, 
-														  arguments * args, weatherDF * wdf_ptr, std::vector<double> * FSCell,
+														  arguments * args, weatherDF * wdf_ptr, std::vector<double> * FSCell, std::vector<float>* crownMetrics,
 														  double randomROS) 
 	{
 	// Special flag for repetition (False = -99 for the record)
@@ -288,7 +288,7 @@ std::vector<int> CellsFBP::manageFire(int period, std::unordered_set<int> & Avai
 	df_ptr->bui = wdf_ptr->bui;	
 	
 	// Compute main angle and ROSs: forward, flanks and back
-    main_outs mainstruct;
+    main_outs mainstruct, metrics;
     snd_outs sndstruct;
     fire_struc headstruct, backstruct, flankstruct;
 
@@ -457,6 +457,14 @@ std::vector<int> CellsFBP::manageFire(int period, std::unordered_set<int> & Avai
 				FSCell->push_back(double(nb));
 				FSCell->push_back(double(period));
 				FSCell->push_back(ros);
+				determine_destiny_metrics(&df_ptr[int(nb) - 1], coef, &metrics);
+				crownMetrics->push_back(double(this->realId));
+				crownMetrics->push_back(double(nb));
+				crownMetrics->push_back(double(std::ceil(ros * 100.0) / 100.0));
+				crownMetrics->push_back(mainstruct.sfi);
+				crownMetrics->push_back(metrics.sfi);
+				crownMetrics->push_back(mainstruct.ftype);
+				crownMetrics->push_back(metrics.ftype);
                 // cannot mutate ROSangleDir during iteration.. we do it like 10 lines down
                // toPop.push_back(angle);
                 /*if (verbose) {
@@ -514,7 +522,7 @@ std::vector<int> CellsFBP::manageFire(int period, std::unordered_set<int> & Avai
 std::vector<int> CellsFBP::manageFireBBO(int period, std::unordered_set<int> & AvailSet,      
 																  inputs * df_ptr, fuel_coefs * coef, 
 																  std::vector<std::vector<int>> & coordCells, std::unordered_map<int, CellsFBP> & Cells_Obj, 
-																  arguments * args, weatherDF * wdf_ptr, std::vector<double> * FSCell,
+																  arguments * args, weatherDF * wdf_ptr, std::vector<double> * FSCell, std::vector<float>* crownMetrics,
 																  double randomROS, std::vector<float> & EllipseFactors) 
 	{
 	// Special flag for repetition (False = -99 for the record)
@@ -531,7 +539,7 @@ std::vector<int> CellsFBP::manageFireBBO(int period, std::unordered_set<int> & A
 	df_ptr->bui = wdf_ptr->bui;	
 	
 	// Compute main angle and ROSs: forward, flanks and back
-    main_outs mainstruct;
+    main_outs mainstruct, metrics;
     snd_outs sndstruct;
     fire_struc headstruct, backstruct, flankstruct;
 
@@ -696,6 +704,14 @@ std::vector<int> CellsFBP::manageFireBBO(int period, std::unordered_set<int> & A
 				FSCell->push_back(double(nb));
 				FSCell->push_back(double(period));
 				FSCell->push_back(ros);
+				determine_destiny_metrics(&df_ptr[int(nb) - 1], coef, &metrics);
+				crownMetrics->push_back(double(this->realId));
+				crownMetrics->push_back(double(nb));
+				crownMetrics->push_back(double(ros));
+				crownMetrics->push_back(mainstruct.sfi);
+				crownMetrics->push_back(metrics.sfi);
+				crownMetrics->push_back(mainstruct.ftype);
+				crownMetrics->push_back(metrics.ftype);
                 // cannot mutate ROSangleDir during iteration.. we do it like 10 lines down
                // toPop.push_back(angle);
                 /*if (verbose) {

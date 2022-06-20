@@ -101,12 +101,13 @@ def ForestGrid(filename, Dictionary):
 # Reads the ASCII files with forest data elevation, saz, slope, and (future) curing degree and returns arrays
 # with values
 def DataGrids(InFolder, NCells):
-    filenames = ["elevation.asc", "saz.asc", "slope.asc", "cur.asc"]
+    filenames = ["elevation.asc", "saz.asc", "slope.asc", "cur.asc","py.asc"]
     Elevation =  np.full(NCells, np.nan)
     SAZ = np.full(NCells, np.nan)
     PS = np.full(NCells, np.nan)
     Curing = np.full(NCells, np.nan)
-    
+    PY = np.full(NCells, np.nan)
+
     for name in filenames:
         ff = os.path.join(InFolder, name)
         if os.path.isfile(ff) == True:
@@ -146,19 +147,22 @@ def DataGrids(InFolder, NCells):
                         if name == "curing.asc":
                             Curing[aux] = float(c)
                             aux += 1
+                        if name == "py.asc":
+                            PY[aux] = float(c)
+                            aux += 1
 
         else:
             print("   No", name, "file, filling with NaN")
             
-    return Elevation, SAZ, PS, Curing
+    return Elevation, SAZ, PS, Curing, PY
 
 # Generates the Data.dat file (csv) from all data files (ready for the simulator)
-def GenerateDat(GFuelType, Elevation, PS, SAZ, Curing, InFolder):
+def GenerateDat(GFuelType, Elevation, PS, SAZ, Curing,PY, InFolder):
     # DF columns
     Columns = ["fueltype", "mon", "jd", "M", "jd_min", 
                "lat", "lon", "elev", "ffmc", "ws", "waz", 
                "bui", "ps", "saz", "pc", "pdf", "gfl", 
-               "cur", "time", "pattern"]
+               "cur", "time", "pattern","py"]
     
     # GFL dictionary
     GFLD = {"C1": 0.75, "C2": 0.8, "C3": 1.15, "C4": 1.2, "C5":1.2, "C6":1.2, "C7":1.2, 
@@ -194,6 +198,7 @@ def GenerateDat(GFuelType, Elevation, PS, SAZ, Curing, InFolder):
     DF["saz"] = SAZ
     DF["time"] = np.zeros(len(GFuelType)).astype(int) + 20
     DF["pattern"] = np.full(len(GFuelType), np.nan)
+    DF["py"] = PY
     DF["lat"] = np.zeros(len(GFuelType)) + 51.621244
     DF["lon"] = np.zeros(len(GFuelType)).astype(int) - 115.608378
     
@@ -230,5 +235,5 @@ def GenDataFile(InFolder):
     GFuelTypeN, GFuelType, Rows, Cols, CellSide = ForestGrid(FGrid, FBPDict)
     
     NCells = len(GFuelType)
-    Elevation, SAZ, PS, Curing = DataGrids(InFolder, NCells)
-    GenerateDat(GFuelType, Elevation, PS, SAZ, Curing, InFolder)
+    Elevation, SAZ, PS, Curing,PY = DataGrids(InFolder, NCells)
+    GenerateDat(GFuelType, Elevation, PS, SAZ, Curing,PY, InFolder)

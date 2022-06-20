@@ -1,0 +1,9 @@
+make.exe -f C:\Users\david\projects\Cell2Fire_Spain_prob_ignition_parallel\Cell2FireC\makefile --dry-run --always-make --keep-going --print-directory
+make: Entering directory 'c:/Users/david/OneDrive/Documentos/GitHub/Cell2Fire'
+make: Leaving directory 'c:/Users/david/OneDrive/Documentos/GitHub/Cell2Fire'
+ 
+make: C:\Users\david\projects\Cell2Fire_Spain_prob_ignition_parallel\Cell2FireC\makefile: No such file or directory
+make: *** No rule to make target 'C:\Users\david\projects\Cell2Fire_Spain_prob_ignition_parallel\Cell2FireC\makefile'.
+make: Failed to remake makefile 'C:\Users\david\projects\Cell2Fire_Spain_prob_ignition_parallel\Cell2FireC\makefile'.
+make: *** No targets specified and no makefile found.  Stop.
+
