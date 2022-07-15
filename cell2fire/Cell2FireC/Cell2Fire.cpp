@@ -501,8 +501,15 @@ void Cell2Fire::reset(int rnumber, double rnumber2, int simExt=1){
 		CSVFolder.MakeDir(this->messagesFolder);
 		this->messagesFolder = this->args.OutFolder + "/Intensity/";
 	}
+		//Surface Fuel consumption Folder
+	if (this->args.OutFireBehavior) {
+		CSVWriter CSVFolder("", "");
+		this->messagesFolder = "mkdir -p " + this->args.OutFolder + "/Surf_fuel_consumption/";
+		CSVFolder.MakeDir(this->messagesFolder);
+		this->messagesFolder = this->args.OutFolder + "/Surf_fuel_consumption/";
+	}
 	//Crown Folder
-	if (this->args.OutFireBehavior){// && this->args.AllowCROS) {
+	if (this->args.OutFireBehavior && this->args.AllowCROS) {
 		CSVWriter CSVFolder("", "");
 		this->messagesFolder = "mkdir -p " + this->args.OutFolder + "/CrownFire/";
 		CSVFolder.MakeDir(this->messagesFolder);
@@ -1349,8 +1356,40 @@ void Cell2Fire::Results(){
 	}
 
 
+	// Surface fuel consumption
+	if (this->args.OutFireBehavior) {
+		this->rosFolder = this->args.OutFolder + "/Surf_fuel_consumption/";
+		std::string rosName;
+		std::vector<int> statusCells2(this->nCells, 0); //(long int, int);
+
+		// Update status 
+		for (auto& bc : this->burningCells) {
+			statusCells2[bc - 1] = 1;
+		}
+		for (auto& ac : this->burntCells) {
+			statusCells2[ac - 1] = 1;
+		}
+		for (auto& hc : this->harvestCells) {
+			statusCells2[hc - 1] = -1;
+		}
+
+		if (this->sim < 10) {
+			rosName = this->rosFolder + "SFC0" + std::to_string(this->sim) + ".asc";
+		}
+
+		else {
+			rosName = this->rosFolder + "SFC" + std::to_string(this->sim) + ".asc";
+		}
+
+		if (this->args.verbose) {
+			std::cout << "We are generating the SFC to a asc file " << rosName << std::endl;
+		}
+		CSVWriter CSVPloter(rosName, " ");
+		CSVPloter.printSurfConsumpAscii(this->rows, this->cols, this->xllcorner, this->yllcorner, this->cellSide, this->crownMetrics, statusCells2);
+	}
+
 	// Crown
-	if ((this->args.OutFireBehavior)){ //&& (this->args.AllowCROS)) {
+	if ((this->args.OutFireBehavior)&& (this->args.AllowCROS)) {
 		this->rosFolder = this->args.OutFolder + "/CrownFire/";
 		std::string rosName;
 		std::vector<int> statusCells2(this->nCells, 0); //(long int, int);

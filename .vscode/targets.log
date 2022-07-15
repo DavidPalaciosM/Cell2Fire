@@ -10,7 +10,7 @@ make: *** No rule to make target 'C:\Users\david\projects\Cell2Fire_Spain_prob_i
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Mon Jun 20 10:38:12 2022
+# Make data base, printed on Fri Jul 15 15:28:13 2022
 
 # Variables
 
@@ -27,7 +27,7 @@ LOCAL_GIT_DIRECTORY = C:\Users\david\AppData\Local\GitHubDesktop\app-3.0.2\resou
 # environment
 LOCALAPPDATA = C:\Users\david\AppData\Local
 # environment
-VSCODE_IPC_HOOK_EXTHOST = \\.\pipe\vscode-ipc-e75bdc05-caf5-4279-966e-2d6c5defadc4-sock
+VSCODE_IPC_HOOK_EXTHOST = \\.\pipe\vscode-ipc-5fa9dda1-f045-44ea-ad61-07a0609122ac-sock
 # environment
 VSCODE_CWD = C:\Users\david\AppData\Local\GitHubDesktop\app-3.0.2
 # environment
@@ -43,7 +43,7 @@ MAKE_COMMAND := C:/ProgramData/chocolatey/lib/make/tools/install/bin/make.exe
 # automatic
 @D = $(patsubst %/,%,$(patsubst %\,%,$(dir $@)))
 # environment
-CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_17888_JRMGGWWHSHEDOSUK
+CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_23356_LBZNSHQAGMPBXFZE
 # environment
 VSCODE_HANDLES_UNCAUGHT_ERRORS = true
 # default
@@ -57,7 +57,7 @@ VSCODE_LOG_STACK = false
 # automatic
 %F = $(notdir $%)
 # environment
-VSCODE_CODE_CACHE_PATH = C:\Users\david\AppData\Roaming\Code\CachedData\4af164ea3a06f701fe3e89a2bcbb421d2026b68f
+VSCODE_CODE_CACHE_PATH = C:\Users\david\AppData\Roaming\Code\CachedData\30d9c6cd9483b2cc586687151bcbcd635f373630
 # environment
 LANG = C
 # default
@@ -101,7 +101,7 @@ MAKEFILE_LIST :=
 # environment
 VSCODE_VERBOSE_LOGGING = true
 # environment
-VSCODE_PID = 17888
+VSCODE_PID = 23356
 # automatic
 ?D = $(patsubst %/,%,$(patsubst %\,%,$(dir $?)))
 # automatic
@@ -133,7 +133,7 @@ MAKELEVEL := 0
 # default
 MAKE = $(MAKE_COMMAND)
 # environment
-PATH = C:\Program Files\BraveSoftware\Brave-Browser\Application;C:\Program Files\Microsoft\jdk-11.0.12.7-hotspot\bin;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64_win\compiler;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\gurobi811\win64\bin;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files (x86)\IncrediBuild;C:\Program Files\dotnet\;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;C:\Program Files\MATLAB\R2022a\runtime\win64;C:\Program Files\MATLAB\R2022a\bin;C:\Users\david\anaconda3;C:\Users\david\anaconda3\Library\mingw-w64\bin;C:\Users\david\anaconda3\Library\usr\bin;C:\Users\david\anaconda3\Library\bin;C:\Users\david\anaconda3\Scripts;C:\Users\david\AppData\Local\Programs\Python\Python37-32\Scripts\;C:\Users\david\AppData\Local\Programs\Python\Python37-32\;C:\Users\david\AppData\Local\Microsoft\WindowsApps;C:\texlive\2020\bin\win32;C:\glpk-4.65\w64\glpsol;C:\Users\david\.dotnet\tools;C:\Users\david\AppData\Local\Programs\Microsoft VS Code\bin
+PATH = C:\Program Files\Microsoft\jdk-11.0.12.7-hotspot\bin;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64_win\compiler;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\gurobi811\win64\bin;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files (x86)\IncrediBuild;C:\Program Files\dotnet\;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;C:\Program Files\MATLAB\R2022a\runtime\win64;C:\Program Files\MATLAB\R2022a\bin;C:\Users\david\anaconda3;C:\Users\david\anaconda3\Library\mingw-w64\bin;C:\Users\david\anaconda3\Library\usr\bin;C:\Users\david\anaconda3\Library\bin;C:\Users\david\anaconda3\Scripts;C:\Users\david\AppData\Local\Programs\Python\Python37-32\Scripts\;C:\Users\david\AppData\Local\Programs\Python\Python37-32\;C:\Users\david\AppData\Local\Microsoft\WindowsApps;C:\texlive\2020\bin\win32;C:\glpk-4.65\w64\glpsol;C:\Users\david\.dotnet\tools;C:\Users\david\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\david\AppData\Local\GitHubDesktop\bin
 # environment
 COMPUTERNAME = LAPTOP-P59MBE95
 # default
@@ -157,8 +157,6 @@ COMMONPROGRAMFILES = C:\Program Files (x86)\Common Files
 # automatic
 ?F = $(notdir $?)
 # environment
-CHROME_RESTART = Brave|�Vaya! Se ha producido un fallo en Brave. �Quieres reiniciar el navegador ahora?|LEFT_TO_RIGHT
-# environment
 PROGRAMW6432 = C:\Program Files
 # environment
 PATHEXT = .COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC
@@ -174,6 +172,8 @@ GNUMAKEFLAGS :=
 VS140COMNTOOLS = C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\Tools\
 # environment
 OS = Windows_NT
+# environment
+__COMPAT_LAYER = DetectorsAppHealth
 # makefile
 .DEFAULT_GOAL := 
 # default
@@ -201,7 +201,7 @@ ELECTRON_RUN_AS_NODE = 1
 # environment
 TEMP = C:\Users\david\AppData\Local\Temp
 # environment
-VSCODE_IPC_HOOK = \\.\pipe\c5a5aa94e51481269b11c9790932dfeb-1.68.0-main-sock
+VSCODE_IPC_HOOK = \\.\pipe\c5a5aa94e51481269b11c9790932dfeb-1.68.1-main-sock
 # default
 .RECIPEPREFIX := 
 # automatic
@@ -268,11 +268,12 @@ all:
 # No general ('VPATH' variable) search path.
 
 # strcache buffers: 1 (0) / strings = 5 / storage = 108 B / avg = 21 B
-# current buf: size = 8174 B / used = 108 B / count = 5 / avg = 21 B
+# current buf: size = 8174 B / used 
+ = 108 B / count = 5 / avg = 21 B
 
 # strcache performance: lookups = 7 / hit rate = 28%
 # hash-table stats:
 # Load=5/8192=0%, Rehash=0, Collisions=0/7=0%
-# Finished Make data base on Mon Jun 20 10:38:12 2022
+# Finished Make data base on Fri Jul 15 15:28:13 2022
 
  

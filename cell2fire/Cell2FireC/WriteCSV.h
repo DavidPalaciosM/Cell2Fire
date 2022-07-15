@@ -40,7 +40,8 @@ public:
 	void printRosAscii(int rows, int cols, double xllcorner, double yllcorner, int cellside, std::vector<double> network, std::vector<int> statusCells);
 	void printIntensityAscii(int rows, int cols, double xllcorner, double yllcorner, int cellside, std::vector<float> crownMetrics, std::vector<int> statusCells);
 	void printCrownAscii(int rows, int cols, double xllcorner, double yllcorner, int cellside, std::vector<float> crownMetrics, std::vector<int> statusCells);
-	
+	void printSurfConsumpAscii(int rows, int cols, double xllcorner, double yllcorner, int cellside, std::vector<float> crownMetrics, std::vector<int> statusCells);
+
 	// Function to create a directory
 	void MakeDir(std::string pathPlot);
 };

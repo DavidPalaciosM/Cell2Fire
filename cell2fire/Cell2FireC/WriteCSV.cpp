@@ -274,7 +274,7 @@ void CSVWriter::printIntensityAscii(int rows, int cols, double xllcorner, double
 			bool destiny = false;
 			int destiny_it;
 			if (statusCells[c + r * cols] == 1) {//if the cell is burnt or burning
-				for (int it = 0; it <= crownMetrics.size(); it = it + 7) {//we iterate over the message file
+				for (int it = 0; it <= crownMetrics.size(); it = it + 8) {//we iterate over the message file
 					if (crownMetrics[it] == (c + r * cols + 1)) { //if the destiny node of messages is the selected cell 
 						if ((crownMetrics[it + 2]) > max_ros) {//if the time of hitting is the lower
 							max_ros = crownMetrics[it + 2];//we update hit time
@@ -355,7 +355,7 @@ void CSVWriter::printCrownAscii(int rows, int cols, double xllcorner, double yll
 			bool destiny = false;
 			int destiny_it;
 			if (statusCells[c + r * cols] == 1) {//if the cell is burnt or burning
-				for (int it = 0; it <= crownMetrics.size(); it = it + 7) {//we iterate over the message file
+				for (int it = 0; it <= crownMetrics.size(); it = it + 8) {//we iterate over the message file
 					if (crownMetrics[it] == (c + r * cols + 1)) { //if the destiny node of messages is the selected cell 
 						if ((crownMetrics[it + 2]) > max_ros) {//if the time of hitting is the lower
 							max_ros = crownMetrics[it + 2];//we update hit time
@@ -370,6 +370,87 @@ void CSVWriter::printCrownAscii(int rows, int cols, double xllcorner, double yll
 				}
 				if ((destiny) && (!origin)) {
 					crown = crownMetrics[destiny_it + 6];
+				}
+			}
+			if (c == cols - 1) { //if it is the last member of a row
+				ofs << crown; //we save the hit ros value
+			}
+			else {
+				ofs << crown << this->delimeter;
+			}
+		}
+		ofs << "\n";
+	}
+	// Close file 
+	ofs.close();
+}
+
+
+void CSVWriter::printSurfConsumpAscii(int rows, int cols, double xllcorner, double yllcorner, int cellside, std::vector<float> crownMetrics, std::vector<int> statusCells)
+{
+	bool outs = false;
+	std::ofstream ofs(this->fileName, std::ofstream::out);
+	// Adding vector to CSV File
+	int r, c;
+	// Add header to ascii file
+		//first line: coles
+	ofs << "ncols";
+	ofs << this->delimeter;
+	ofs << cols;
+	ofs << "\n";
+	//second line: rows
+	ofs << "nrows";
+	ofs << this->delimeter;
+	ofs << rows;
+	ofs << "\n";
+	//third line: xllcorner
+	ofs << "xllcorner";
+	ofs << this->delimeter;
+	ofs << xllcorner;
+	ofs << "\n";
+	//fourth line: yllcorner
+	ofs << "yllcorner";
+	ofs << this->delimeter;
+	ofs << yllcorner;
+	ofs << "\n";
+	//cellsize
+	ofs << "cellsize";
+	ofs << this->delimeter;
+	ofs << cellside;
+	ofs << "\n";
+	//NODATA_value
+	ofs << "NODATA_value";
+	ofs << this->delimeter;
+	ofs << -9999;
+	ofs << "\n";
+	this->linesCount++;
+	bool crown;
+	double max_ros;
+	for (int r = 0; r < rows; r++)
+	{
+		for (int c = 0; c < cols; c++)
+		{
+			crown = 0; //default hit ros
+			max_ros = 0;
+			bool origin = false;
+			bool destiny = false;
+			int destiny_it;
+			if (statusCells[c + r * cols] == 1) {//if the cell is burnt or burning
+				for (int it = 0; it <= crownMetrics.size(); it = it + 8) {//we iterate over the message file
+					if (crownMetrics[it] == (c + r * cols + 1)) { //if the destiny node of messages is the selected cell 
+						if ((crownMetrics[it + 2]) > max_ros) {//if the time of hitting is the lower
+							max_ros = crownMetrics[it + 2];//we update hit time
+							crown = crownMetrics[it + 7];//we update the hit ros
+						}
+						origin = true;
+					}
+					if (crownMetrics[it + 1] == (c + r * cols + 1)) {
+						destiny = true;
+						destiny_it = it;
+					}
+				}
+				if ((destiny) && (!origin)) {
+					crown = crownMetrics[destiny_it + 7];
 				}
 			}
 			if (c == cols - 1) { //if it is the last member of a row
