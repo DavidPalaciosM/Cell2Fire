@@ -1287,7 +1287,7 @@ void Cell2Fire::Results(){
 			std::cout  << "We are generating the network messages to a csv file " << messagesName << std::endl;
 		}
 		CSVWriter CSVPloter(messagesName, ",");
-		CSVPloter.printCSVDouble_V2(this->burntCells.size() - this->nIgnitions, 4, this->FSCell);
+		CSVPloter.printCSVDouble_V2(this->FSCell.size(), 4, this->FSCell);
 	}
 
 	
